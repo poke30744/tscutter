@@ -27,6 +27,9 @@ def FindSplitPosition(videoPath, ss, to, sceneChangeSad=None):
     return prevEnd, sceneChange, nextStart
 
 def GeneratePtsMap(videoPath, separatorPeriods, quiet=False):
+    duration = GetInfo(videoPath)['duration']
+    fileSize = Path(videoPath).stat().st_size
+    
     ptsmap = {
         0.0: {
             'pts_display': FormatTimestamp(0.0),
@@ -41,12 +44,11 @@ def GeneratePtsMap(videoPath, separatorPeriods, quiet=False):
             'next_start_pos': 0,
         }
     }
-    if float(separatorPeriods[0][0] / 1000) == 0.0:
+
+    if len(separatorPeriods) > 0 and float(separatorPeriods[0][0] / 1000) == 0.0:
         ptsmap[0.0]['silent_to'] = separatorPeriods[0][1] / 1000
         del separatorPeriods[0]
 
-    duration = GetInfo(videoPath)['duration']
-    fileSize = Path(videoPath).stat().st_size
     for silence in tqdm(separatorPeriods, disable=quiet, desc='Looking for cut position'):
         ss, to = silence[0] / 1000, silence[1] / 1000
         originalSs, originalTo = ss, to
