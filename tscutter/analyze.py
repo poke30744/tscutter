@@ -1,9 +1,12 @@
 import argparse, json, shutil
 from pathlib import Path
+import logging
 from tqdm import tqdm
 from tsutils.audio import DetectSilence
 from tsutils.common import FormatTimestamp, ClipToFilename, CopyPart
 from tsutils.ffmpeg import GetInfo, ExtractFrameProps
+
+logger = logging.getLogger('tscutter.analyze')
 
 def FindSplitPosition(videoPath, ss, to, sceneChangeSad=None):
     propList = ExtractFrameProps(videoPath, ss, to)
@@ -110,7 +113,7 @@ def AnalyzeVideo(videoPath, indexPath=None, minSilenceLen=800, silenceThresh=-80
         (videoPath.parent / '_metadata').mkdir(parents=True, exist_ok=True)
 
     if indexPath.exists() and not force:
-        print(f'Skipped analyzing {videoPath.name}')
+        logger.warning(f'Skipped analyzing {videoPath.name}')
         return indexPath
 
     separatorPeriods = DetectSilence(path=videoPath, min_silence_len=minSilenceLen, silence_thresh=silenceThresh)
