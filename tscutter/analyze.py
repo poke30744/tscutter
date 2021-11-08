@@ -8,6 +8,18 @@ from tsutils.ffmpeg import GetInfo, ExtractFrameProps
 
 logger = logging.getLogger('tscutter.analyze')
 
+def MergeIntervals(intervals):
+    if len(intervals) == 0 or len(intervals) == 1:
+        return intervals
+    intervals.sort(key=lambda x:x[0])
+    result = [intervals[0]]
+    for interval in intervals[1:]:
+        if interval[0] <= result[-1][1]:
+            result[-1][1] = max(result[-1][1], interval[1])
+        else:
+            result.append(interval)
+    return result
+
 def FindSplitPosition(videoPath, ss, to, sceneChangeSad=None):
     propList = ExtractFrameProps(videoPath, ss, to)
     if not propList:
@@ -29,10 +41,17 @@ def FindSplitPosition(videoPath, ss, to, sceneChangeSad=None):
             break
     return prevEnd, sceneChange, nextStart
 
-def GeneratePtsMap(videoPath, separatorPeriods, quiet=False):
+def LookingForCutLocations(videoPath, intervals, quiet=True):
+    locations = []
+    for interval in tqdm(intervals, disable=quiet, desc='Looking for cut position'):
+        prevEnd, sceneChange, nextStart = FindSplitPosition(videoPath, interval[0] / 1000, interval[1] / 1000, None)
+        if prevEnd is not None and sceneChange is not None and nextStart is not None:
+            locations.append([prevEnd, sceneChange, nextStart])
+    return locations
+
+def GeneratePtsMap(videoPath, cutLocations):
     duration = GetInfo(videoPath)['duration']
     fileSize = Path(videoPath).stat().st_size
-    
     ptsmap = {
         0.0: {
             'pts_display': FormatTimestamp(0.0),
@@ -47,30 +66,11 @@ def GeneratePtsMap(videoPath, separatorPeriods, quiet=False):
             'next_start_pos': 0,
         }
     }
-
-    if len(separatorPeriods) > 0 and float(separatorPeriods[0][0] / 1000) == 0.0:
-        ptsmap[0.0]['silent_to'] = separatorPeriods[0][1] / 1000
-        del separatorPeriods[0]
-
-    for silence in tqdm(separatorPeriods, disable=quiet, desc='Looking for cut position'):
-        ss, to = silence[0] / 1000, silence[1] / 1000
-        originalSs, originalTo = ss, to
-        sad, prevEnd, nextStart = None, None, None
-        while sad is None or prevEnd is None or nextStart is None:
-            prevEnd, sceneChange, nextStart = FindSplitPosition(videoPath, ss, to, sad)
-            sad = sceneChange['sad'] if sceneChange and sceneChange['sad'] > 0.1 else None
-            ss -= 0.5
-            to += 0.5
-            if ss < 0 or duration - to < 1.0 or abs(originalSs - ss) > 5 or abs(originalTo -to) > 5:
-                break
-        if ss < 0 or duration - to < 1.0 or abs(originalSs - ss) > 5 or abs(originalTo -to) > 5:
-            continue
+    for prevEnd, sceneChange, nextStart in cutLocations:
         sceneChangePts = round(sceneChange['ptsTime'], 8)
         ptsmap[sceneChangePts] = {
             'pts_display': FormatTimestamp(sceneChangePts),
             'sad': sceneChange['sad'],
-            'silent_ss': silence[0] / 1000,
-            'silent_to': silence[1] / 1000,
             'prev_end_pts': prevEnd['ptsTime'],
             'prev_end_sad': prevEnd['sad'],
             'prev_end_pos': prevEnd['pos'],
@@ -90,6 +90,7 @@ def GeneratePtsMap(videoPath, separatorPeriods, quiet=False):
         'next_start_sad': duration,
         'next_start_pos': fileSize,
     }
+
     # to remove dublications
     ptsDedup = { round(pts): pts for pts in ptsmap }
     ptsmapDedup = { pts: ptsmap[pts] for pts in sorted(list(ptsDedup.values())) }
@@ -116,8 +117,19 @@ def AnalyzeVideo(videoPath, indexPath=None, minSilenceLen=800, silenceThresh=-80
         logger.warning(f'Skipped analyzing {videoPath.name}')
         return indexPath
 
-    separatorPeriods = DetectSilence(path=videoPath, min_silence_len=minSilenceLen, silence_thresh=silenceThresh)
-    ptsMap = GeneratePtsMap(videoPath=videoPath, separatorPeriods=separatorPeriods, quiet=quiet)
+    separatorIntervals = DetectSilence(path=videoPath, min_silence_len=minSilenceLen, silence_thresh=silenceThresh)
+    
+    # We assume scene change happens between [ {interval start} - 1 sec, {internval end} + 1 sec ]
+    extendedIntervals = [ [interval[0]-1000, interval[1]+1000 ] for interval in separatorIntervals]
+    mergedIntervals = MergeIntervals(extendedIntervals)
+    if mergedIntervals[0][0] < 0:
+        mergedIntervals[0][0] = 0
+    
+    logger.info(f'len(mergedIntervals): {len(mergedIntervals)}')
+    cutLocations = LookingForCutLocations(videoPath=videoPath, intervals=mergedIntervals, quiet=False)
+    logger.info(f'len(cutLocations): {len(cutLocations)}')
+    ptsMap = GeneratePtsMap(videoPath=videoPath, cutLocations=cutLocations)
+    logger.info(f'len(ptsMap): {len(ptsMap)}')
 
     with open(indexPath, 'w') as f:
         json.dump(ptsMap, f, indent=True)
@@ -159,6 +171,8 @@ if __name__ == "__main__":
     subparser.add_argument('--output', '-o', help='output folder')
 
     args = parser.parse_args()
+
+    logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
     if args.command == 'analyze':
         AnalyzeVideo(videoPath=args.input, indexPath=args.output, minSilenceLen=args.length, silenceThresh=args.threshold, quiet=args.quiet)
