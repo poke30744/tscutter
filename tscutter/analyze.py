@@ -2,9 +2,9 @@ import argparse, json, shutil
 from pathlib import Path
 import logging
 from tqdm import tqdm
-from tsutils.audio import DetectSilence
-from tsutils.common import FormatTimestamp, ClipToFilename, CopyPart
-from tsutils.ffmpeg import GetInfo, ExtractFrameProps
+from .audio import DetectSilence
+from .common import FormatTimestamp, ClipToFilename, CopyPart
+from .ffmpeg import GetInfo, ExtractFrameProps
 
 logger = logging.getLogger('tscutter.analyze')
 

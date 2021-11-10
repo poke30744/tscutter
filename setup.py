@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setuptools.setup(
     name="tscutter",
-    version="0.0.1",
+    version="0.0.9",
     author="poke30744",
     author_email="poke30744@gmail.com",
     description="Cut MEPG TS files into clips",
@@ -14,7 +14,10 @@ setuptools.setup(
     url="https://github.com/pypa/sampleproject",
     packages=setuptools.find_packages(),
     install_requires=[
-        'tsutils'
+        'pydub',
+        'tqdm',
+        'numpy',
+        'Pillow'
     ],
     classifiers=[
         "Programming Language :: Python :: 3",
