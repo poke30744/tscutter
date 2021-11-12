@@ -20,17 +20,23 @@ def MergeIntervals(intervals):
             result.append(interval)
     return result
 
-def FindSplitPosition(videoPath, ss, to, sceneChangeSad=None):
-    propList = ExtractFrameProps(videoPath, ss, to)
+def FindSplitPosition(videoPath, ss, to):
+    # We assume scene change occurs between [ {interval start} - 1 sec, {internval end} + 1 sec ]
+    propList = ExtractFrameProps(videoPath, ((ss-1) if (ss-1) > 0 else 0), to+1)
     if not propList:
         return None, None, None # ffmpeg error
-    if sceneChangeSad is None:
-        sceneChangeSad = max([ prop['sad'] for prop in propList ])
-    sceneChangeList = [ prop for prop in propList if prop['sad'] == sceneChangeSad ]
-    if len(sceneChangeList) == 0 :
+    
+    # sceneChange should be found between [ {interval start}, {internval end} ]
+    sceneChange = None
+    for prop in propList:
+        if ss <= prop['ptsTime'] <= to:
+            if sceneChange is None:
+                sceneChange = prop
+            elif prop['sad'] > sceneChange['sad']:
+                sceneChange = prop
+    if sceneChange is None:
         return None, None, None # ffmpeg error
-    else:
-        sceneChange = sceneChangeList[0]
+
     iFramesProps = [ prop for prop in propList if prop['type'] == 'I' ]
     prevEnd, nextStart = None, None
     for prop in iFramesProps:
@@ -39,12 +45,16 @@ def FindSplitPosition(videoPath, ss, to, sceneChangeSad=None):
         elif prop['ptsTime'] > sceneChange['ptsTime']:
             nextStart = prop
             break
+    if prevEnd is None:
+        prevEnd = sceneChange
+    if nextStart is None:
+        nextStart = sceneChange
     return prevEnd, sceneChange, nextStart
 
 def LookingForCutLocations(videoPath, intervals, quiet=True):
     locations = []
     for interval in tqdm(intervals, disable=quiet, desc='Looking for cut position'):
-        prevEnd, sceneChange, nextStart = FindSplitPosition(videoPath, interval[0] / 1000, interval[1] / 1000, None)
+        prevEnd, sceneChange, nextStart = FindSplitPosition(videoPath, interval[0] / 1000, interval[1] / 1000)
         if prevEnd is not None and sceneChange is not None and nextStart is not None:
             locations.append([prevEnd, sceneChange, nextStart])
     return locations
@@ -113,18 +123,8 @@ def AnalyzeVideo(videoPath, indexPath=None, minSilenceLen=800, silenceThresh=-80
         indexPath = videoPath.parent / '_metadata' / (videoPath.stem + '.ptsmap')
         (videoPath.parent / '_metadata').mkdir(parents=True, exist_ok=True)
 
-    if indexPath.exists() and not force:
-        logger.warning(f'Skipped analyzing {videoPath.name}')
-        return indexPath
-
     separatorIntervals = DetectSilence(path=videoPath, min_silence_len=minSilenceLen, silence_thresh=silenceThresh)
-    
-    # We assume scene change happens between [ {interval start} - 1 sec, {internval end} + 1 sec ]
-    extendedIntervals = [ [interval[0]-1000, interval[1]+1000 ] for interval in separatorIntervals]
-    mergedIntervals = MergeIntervals(extendedIntervals)
-    if mergedIntervals[0][0] < 0:
-        mergedIntervals[0][0] = 0
-    
+    mergedIntervals = MergeIntervals(separatorIntervals)
     logger.info(f'len(mergedIntervals): {len(mergedIntervals)}')
     cutLocations = LookingForCutLocations(videoPath=videoPath, intervals=mergedIntervals, quiet=False)
     logger.info(f'len(cutLocations): {len(cutLocations)}')
