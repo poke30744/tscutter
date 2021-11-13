@@ -3,6 +3,7 @@ pipeline {
         docker {
             label '!windows'
             image 'python:3.9.7'
+            args '--user 0:0'
         } 
     }
     stages {
