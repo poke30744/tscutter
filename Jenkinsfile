@@ -8,6 +8,7 @@ pipeline {
     stages {
         stage('build') {
             steps {
+                sh 'whoami'
                 sh 'ls -l'
                 sh 'python setup.py sdist bdist_wheel'
             }
