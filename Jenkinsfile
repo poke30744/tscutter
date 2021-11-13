@@ -8,16 +8,13 @@ pipeline {
     stages {
         stage('build') {
             steps {
-                sh 'whoami'
                 sh 'ls -l'
                 sh 'python setup.py sdist bdist_wheel'
             }
         }
         stage('test') {
             steps {
-                sh 'pip install tqdm'
-                sh 'pip install tqdm pydub Pillow numpy'
-                sh 'pip install dist/tscutter-0.1.$BUILD_NUMBER-py3-none-any.whl'
+                sh 'sudo pip install dist/tscutter-0.1.$BUILD_NUMBER-py3-none-any.whl'
                 sh 'python -m tscutter.analyze -h'
                 sh 'python -m tscutter.audio -h'
             }
