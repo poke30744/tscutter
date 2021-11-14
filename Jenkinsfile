@@ -9,8 +9,11 @@ pipeline {
     stages {
         stage('Build') {
             steps {
-                sh 'pwd'
-                sh 'ls -l'
+                sh '''
+                    python --version
+                    pwd
+                    ls -l
+                '''
                 sh 'python setup.py sdist bdist_wheel'
             }
         }
