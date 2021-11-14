@@ -36,8 +36,7 @@ pipeline {
     post {
         aborted {
             echo 'aborted'
-            emailext
-                subject: "ABORTED: Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]'",
+            emailext subject: "ABORTED: Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]'",
                 body: """
                     <p>Check console output at &QUOT;<a href='${env.BUILD_URL}'>${env.JOB_NAME} [${env.BUILD_NUMBER}]</a>&QUOT;</p>
                     """,
@@ -45,8 +44,7 @@ pipeline {
         }
         failure {
             echo 'failure'
-            emailext
-                subject: "FAILED: Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]'",
+            emailext subject: "FAILED: Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]'",
                 body: """
                     <p>Check console output at &QUOT;<a href='${env.BUILD_URL}'>${env.JOB_NAME} [${env.BUILD_NUMBER}]</a>&QUOT;</p>
                     """,
@@ -54,8 +52,7 @@ pipeline {
         }
         success {
             echo 'success'
-            emailext
-                subject: "SUCCEEDED: Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]'",
+            emailext subject: "SUCCEEDED: Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]'",
                 body: """
                     <p>Check console output at &QUOT;<a href='${env.BUILD_URL}'>${env.JOB_NAME} [${env.BUILD_NUMBER}]</a>&QUOT;</p>
                     """,
