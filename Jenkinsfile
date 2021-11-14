@@ -26,7 +26,7 @@ pipeline {
                 sh 'ls -l'
                 sh 'pip install twine'
                 withCredentials([usernamePassword(credentialsId: '65ddf05a-75ed-43cd-ab7e-5ac1e6af2526', usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD')]) {
-                    sh 'twine upload -r testpypi dist/* -u $USERNAME -p $PASSWORD'
+                    sh 'python -m twine upload -r testpypi dist/* -u $USERNAME -p $PASSWORD'
                 }
             }
         }
