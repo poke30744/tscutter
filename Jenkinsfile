@@ -24,21 +24,31 @@ pipeline {
                 sh 'python -m tscutter.audio -h'
             }
         }
-        stage('Deploy') {
+        /*stage('Deploy') {
             steps {
                 sh 'pip install twine'
                 withCredentials([usernamePassword(credentialsId: '65ddf05a-75ed-43cd-ab7e-5ac1e6af2526', usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD')]) {
                     sh 'python -m twine upload -r testpypi dist/* -u $USERNAME -p $PASSWORD'
                 }
             }
+        }*/
+    }
+    post {
+        aborted {
+
         }
-        stage('Cleanup') {
-            steps {
-                sh '''
-                    rm -rf /var/jenkins_home/.cache/pip
-                    rm -rf /var/jenkins_home/.local
-                '''
-            }
+        failure {
+
+        }
+        success {
+
+        }
+        cleanup {
+            echo 'Cleaning up ...'
+            sh '''
+                rm -rf /var/jenkins_home/.cache/pip
+                rm -rf /var/jenkins_home/.local
+            '''
         }
     }
 }
