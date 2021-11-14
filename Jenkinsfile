@@ -3,7 +3,7 @@ pipeline {
         docker {
             label '!windows'
             image 'python:3.9.7'
-            args '--user 0:1000'
+            args '-v /etc/passwd:/etc/passwd:ro -v /etc/group:/etc/group:ro'
         } 
     }
     stages {
