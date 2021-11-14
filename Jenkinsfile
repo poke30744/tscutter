@@ -3,13 +3,13 @@ pipeline {
         docker {
             label '!windows'
             image 'python:3.9.7'
-            args '-v /etc/passwd:/etc/passwd:ro -v /etc/group:/etc/group:ro'
+            args '-e HOME=/var/jenkins_home'
         } 
     }
     stages {
         stage('build') {
             steps {
-                sh 'whoami'
+                //sh 'whoami'
                 sh 'ls -l'
                 sh 'python setup.py sdist bdist_wheel'
             }
