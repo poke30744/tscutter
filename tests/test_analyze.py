@@ -1,7 +1,7 @@
 import pytest
 from tests import junjyoukirari_23_ts, salor_moon_C_02_ts, salor_moon_C_02_ptsmap, salor_moon_C_11_ts, invalid_ts, not_existing_ts
 import tscutter.analyze
-import tsutils
+from tscutter.common import InvalidTsFormat
 import shutil
 
 def test_Analyze_Success():
@@ -11,7 +11,7 @@ def test_Analyze_Success():
     indexPath.unlink()
 
 def test_Analyze_Invalid():
-    with pytest.raises(tsutils.InvalidTsFormat, match='"invalid.ts" is invalid!'):
+    with pytest.raises(InvalidTsFormat, match='"invalid.ts" is invalid!'):
         tscutter.analyze.AnalyzeVideo(invalid_ts)
 
 def test_Split_Success():
