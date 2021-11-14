@@ -3,7 +3,7 @@ pipeline {
         docker {
             label '!windows'
             image 'python:3.9.7'
-            //args '-e HOME=/var/jenkins_home -v /var/jenkins_home:/var/jenkins_home:'
+            args '-e HOME=/var/jenkins_home'// -v /var/jenkins_home:/var/jenkins_home:'
         } 
     }
     stages {
