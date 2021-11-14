@@ -35,13 +35,13 @@ pipeline {
     }
     post {
         aborted {
-
+            echo 'aborted'
         }
         failure {
-
+            echo 'failure'
         }
         success {
-
+            echo 'success'
         }
         cleanup {
             echo 'Cleaning up ...'
