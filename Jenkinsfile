@@ -3,7 +3,7 @@ pipeline {
         docker {
             label '!windows'
             image 'python:3.9.7'
-            args '-e HOME=/var/jenkins_home --tmpfs /var/jenkins_home'
+            args '-e HOME=/var/jenkins_home -v /var/jenkins_home:/var/jenkins_home'
         } 
     }
     parameters {
@@ -15,6 +15,7 @@ pipeline {
                 sh '''
                     python --version
                     pwd
+                    df -h
                     ls -l
                 '''
                 sh 'python setup.py sdist bdist_wheel'
@@ -69,10 +70,10 @@ pipeline {
         }
         cleanup {
             echo 'Cleaning up ...'
-            /*sh '''
+            sh '''
                 rm -rf /var/jenkins_home/.cache/pip
                 rm -rf /var/jenkins_home/.local
-            '''*/
+            '''
         }
     }
 }
