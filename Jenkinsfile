@@ -45,7 +45,7 @@ pipeline {
             echo 'aborted'
             emailext subject: "ABORTED: Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]'",
                 body: """
-                    Job "${env.JOB_NAME} [${env.BUILD_NUMBER}]" aborted
+                    Job "${env.JOB_NAME} [${env.BUILD_NUMBER}]" aborted\n
                     Check console output at ${env.BUILD_URL}\n
                 """,
                 recipientProviders: [[$class: 'DevelopersRecipientProvider'], [$class: 'RequesterRecipientProvider']]
@@ -54,7 +54,7 @@ pipeline {
             echo 'failure'
             emailext subject: "FAILED: Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]'",
                 body: """
-                    Job "${env.JOB_NAME} [${env.BUILD_NUMBER}]" failed
+                    Job "${env.JOB_NAME} [${env.BUILD_NUMBER}]" failed\n
                     Check console output at ${env.BUILD_URL}\n
                 """,
                 recipientProviders: [[$class: 'DevelopersRecipientProvider'], [$class: 'RequesterRecipientProvider']]
@@ -63,7 +63,7 @@ pipeline {
             echo 'success'
             emailext subject: "SUCCEEDED: Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]'",
                 body: """
-                    Job "${env.JOB_NAME} [${env.BUILD_NUMBER}]" succeeded
+                    Job "${env.JOB_NAME} [${env.BUILD_NUMBER}]" succeeded\n
                     Check console output at ${env.BUILD_URL}\n
                 """,
                 recipientProviders: [[$class: 'DevelopersRecipientProvider'], [$class: 'RequesterRecipientProvider']]
