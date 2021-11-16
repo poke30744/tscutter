@@ -13,7 +13,7 @@ setuptools.setup(
     description="Cut MEPG TS files into clips",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/pypa/sampleproject",
+    url="https://github.com/poke30744/tscutter/blob/main/README.md",
     packages=setuptools.find_packages(exclude=['tests',]),
     install_requires=[
         'pydub',
