@@ -23,7 +23,7 @@ pipeline {
         }
         stage('Test') {
             steps {
-                sh 'pip install -i https://test.pypi.org/simple/ dist/tscutter-0.1.$BUILD_NUMBER-py3-none-any.whl'
+                sh 'pip install dist/tscutter-0.1.$BUILD_NUMBER-py3-none-any.whl'
                 sh 'python -m tscutter.analyze -h'
                 sh 'python -m tscutter.audio -h'
             }
@@ -44,28 +44,19 @@ pipeline {
         aborted {
             echo 'aborted'
             emailext subject: "ABORTED: Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]'",
-                body: """
-                    Job "${env.JOB_NAME} [${env.BUILD_NUMBER}]" aborted\n
-                    Check console output at ${env.BUILD_URL}\n
-                """,
+                body: """Job "${env.JOB_NAME} [${env.BUILD_NUMBER}]" aborted\nCheck console output at ${env.BUILD_URL}\n""",
                 recipientProviders: [[$class: 'DevelopersRecipientProvider'], [$class: 'RequesterRecipientProvider']]
         }
         failure {
             echo 'failure'
             emailext subject: "FAILED: Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]'",
-                body: """
-                    Job "${env.JOB_NAME} [${env.BUILD_NUMBER}]" failed\n
-                    Check console output at ${env.BUILD_URL}\n
-                """,
+                body: """Job "${env.JOB_NAME} [${env.BUILD_NUMBER}]" failed\nCheck console output at ${env.BUILD_URL}\n""",
                 recipientProviders: [[$class: 'DevelopersRecipientProvider'], [$class: 'RequesterRecipientProvider']]
         }
         success {
             echo 'success'
             emailext subject: "SUCCEEDED: Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]'",
-                body: """
-                    Job "${env.JOB_NAME} [${env.BUILD_NUMBER}]" succeeded\n
-                    Check console output at ${env.BUILD_URL}\n
-                """,
+                body: """Job "${env.JOB_NAME} [${env.BUILD_NUMBER}]" succeeded\nCheck console output at ${env.BUILD_URL}\n""",
                 recipientProviders: [[$class: 'DevelopersRecipientProvider'], [$class: 'RequesterRecipientProvider']]
         }
         cleanup {
