@@ -72,6 +72,8 @@ def GetInfo(path):
         info = GetInfoFromLines(pipeObj.stderr, path.suffix)
     except IndexError:
         raise InvalidTsFormat(f'"{path.name}" is invalid!')
+    except ValueError:
+        raise InvalidTsFormat(f'"{path.name}" is invalid!')
     pipeObj.wait()
     if info is None:
         raise InvalidTsFormat(f'"{path.name}" is invalid!')
