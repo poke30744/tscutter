@@ -75,6 +75,8 @@ def GetInfo(path):
         raise InvalidTsFormat(f'"{path.name}" is invalid!')
     except ValueError:
         raise InvalidTsFormat(f'"{path.name}" is invalid!')
+    except KeyError:
+        raise InvalidTsFormat(f'"{path.name}" is invalid!')
     pipeObj.wait()
     if info is None:
         raise InvalidTsFormat(f'"{path.name}" is invalid!')
