@@ -30,12 +30,13 @@ def GetInfoFromLines(lines, suffix=None):
                     if ' fps' in item:
                         programs[pid]['fps'] = float(item.replace(' fps', ''))
                         break
-                sar = line.split('SAR ')[1].split(' ')[0].split(':')
-                sar = int(sar[0]), int(sar[1])
-                dar = line.split('DAR ')[1].split(' ')[0].split(']')[0].split(':')
-                dar = int(dar[0]), int(dar[1])
-                programs[pid]['sar'] = sar
-                programs[pid]['dar'] = dar
+                if 'SAR ' in line and 'DAR ' in line:
+                    sar = line.split('SAR ')[1].split(' ')[0].split(':')
+                    sar = int(sar[0]), int(sar[1])
+                    dar = line.split('DAR ')[1].split(' ')[0].split(']')[0].split(':')
+                    dar = int(dar[0]), int(dar[1])
+                    programs[pid]['sar'] = sar
+                    programs[pid]['dar'] = dar
             elif 'Audio:' in line and 'Hz,' in line:
                 programs[pid]['soundTracks'] += 1
         if 'Press [q] to stop' in line or ' time=' in line:
