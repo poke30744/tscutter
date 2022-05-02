@@ -9,7 +9,7 @@ def CheckExtenralCommand(command):
     if sys.platform == 'win32':
         pipeObj = subprocess.Popen(f'cmd /c where {command}', stdout=subprocess.PIPE)
     else:
-        pipeObj = subprocess.Popen(f'which {command}', stdout=subprocess.PIPE)
+        pipeObj = subprocess.Popen(f'which {command}', stdout=subprocess.PIPE, shell=True)
     pipeObj.wait()
     path = pipeObj.stdout.read().decode().strip('\r\n')
     if os.path.exists(path):
