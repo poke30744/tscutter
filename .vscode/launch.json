@@ -5,12 +5,21 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "analyze",
+            "name": "tscutter.analyze",
             "type": "python",
             "request": "launch",
             "module": "tscutter.analyze",
             "args": [
                 "analyze",
+                "-i", "C:/Samples/2021年01月18日19時30分00秒-美少女戦士セーラームーンCrystal #11_trimmed.ts"
+            ]
+        },
+        {
+            "name": "tscutter.audio",
+            "type": "python",
+            "request": "launch",
+            "module": "tscutter.audio",
+            "args": [
                 "-i", "C:/Samples/2021年01月18日19時30分00秒-美少女戦士セーラームーンCrystal #11_trimmed.ts"
             ]
         }

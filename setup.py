@@ -19,7 +19,7 @@ setuptools.setup(
         'pydub',
         'tqdm',
         'numpy',
-        'Pillow'
+        'Pillow',
     ],
     classifiers=[
         "Programming Language :: Python :: 3",

@@ -4,7 +4,7 @@ import logging
 from tqdm import tqdm
 from .audio import DetectSilence
 from .common import FormatTimestamp, ClipToFilename, CopyPart
-from .ffmpeg import GetInfo, ExtractFrameProps
+from .ffmpeg import InputFile
 
 logger = logging.getLogger('tscutter.analyze')
 
@@ -20,9 +20,9 @@ def MergeIntervals(intervals):
             result.append(interval)
     return result
 
-def FindSplitPosition(videoPath, ss, to):
+def FindSplitPosition(inputFile: InputFile, ss, to):
     # We assume scene change occurs between [ {interval start} - 1 sec, {internval end} + 1 sec ]
-    propList = ExtractFrameProps(videoPath, ((ss-1) if (ss-1) > 0 else 0), to+1)
+    propList = inputFile.ExtractFrameProps(((ss-1) if (ss-1) > 0 else 0), to+1)
     if not propList:
         return None, None, None # ffmpeg error
     
@@ -51,17 +51,17 @@ def FindSplitPosition(videoPath, ss, to):
         nextStart = sceneChange
     return prevEnd, sceneChange, nextStart
 
-def LookingForCutLocations(videoPath, intervals, quiet=True):
+def LookingForCutLocations(inputFile: InputFile, intervals, quiet=True):
     locations = []
     for interval in tqdm(intervals, disable=quiet, desc='Looking for cut position'):
-        prevEnd, sceneChange, nextStart = FindSplitPosition(videoPath, interval[0] / 1000, interval[1] / 1000)
+        prevEnd, sceneChange, nextStart = FindSplitPosition(inputFile, interval[0] / 1000, interval[1] / 1000)
         if prevEnd is not None and sceneChange is not None and nextStart is not None:
             locations.append([prevEnd, sceneChange, nextStart])
     return locations
 
-def GeneratePtsMap(videoPath, cutLocations):
-    duration = GetInfo(videoPath)['duration']
-    fileSize = Path(videoPath).stat().st_size
+def GeneratePtsMap(inputFile: InputFile, cutLocations):
+    duration = inputFile.GetInfo()['duration']
+    fileSize = inputFile.path.stat().st_size
     ptsmap = {
         0.0: {
             'pts_display': FormatTimestamp(0.0),
@@ -116,22 +116,21 @@ def GeneratePtsMap(videoPath, cutLocations):
 
     return ptsmapDedup
 
-def AnalyzeVideo(videoPath, indexPath=None, outputFolder=None, minSilenceLen=800, silenceThresh=-80, force=False, quiet=False):
-    videoPath = Path(videoPath)
+def AnalyzeVideo(inputFile: InputFile, indexPath=None, outputFolder=None, minSilenceLen=800, silenceThresh=-80, quiet=False):
     if indexPath is None:
         if outputFolder is None:
-            outputFolder = videoPath.parent
+            outputFolder = inputFile.path.parent
         else:
             outputFolder = Path(outputFolder)
-        indexPath = outputFolder / '_metadata' / (videoPath.stem + '.ptsmap')
+        indexPath = outputFolder / '_metadata' / (inputFile.path.stem + '.ptsmap')
     indexPath.parent.mkdir(parents=True, exist_ok=True)
 
-    separatorIntervals = DetectSilence(path=videoPath, min_silence_len=minSilenceLen, silence_thresh=silenceThresh)
+    separatorIntervals = DetectSilence(inputFile=inputFile, min_silence_len=minSilenceLen, silence_thresh=silenceThresh)
     mergedIntervals = MergeIntervals(separatorIntervals)
     logger.info(f'len(mergedIntervals): {len(mergedIntervals)}')
-    cutLocations = LookingForCutLocations(videoPath=videoPath, intervals=mergedIntervals, quiet=False)
+    cutLocations = LookingForCutLocations(inputFile=inputFile, intervals=mergedIntervals, quiet=quiet)
     logger.info(f'len(cutLocations): {len(cutLocations)}')
-    ptsMap = GeneratePtsMap(videoPath=videoPath, cutLocations=cutLocations)
+    ptsMap = GeneratePtsMap(inputFile=inputFile, cutLocations=cutLocations)
     logger.info(f'len(ptsMap): {len(ptsMap)}')
 
     with indexPath.open('w') as f:
@@ -177,6 +176,6 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
     if args.command == 'analyze':
-        AnalyzeVideo(videoPath=args.input, indexPath=args.output, minSilenceLen=args.length, silenceThresh=args.threshold, quiet=args.quiet)
+        AnalyzeVideo(inputFile=InputFile(args.input), indexPath=args.output, minSilenceLen=args.length, silenceThresh=args.threshold, quiet=args.quiet)
     elif args.command == 'split':
-        SplitVideo(videoPath=args.input, indexPath=args.index, outputFolder=args.output, quiet=args.quiet)
+        SplitVideo(inputFile=InputFile(args.input), indexPath=args.index, outputFolder=args.output, quiet=args.quiet)
