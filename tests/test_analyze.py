@@ -2,7 +2,7 @@ import pytest
 from tests import junjyoukirari_23_ts, salor_moon_C_02_ts, salor_moon_C_02_ptsmap, salor_moon_C_11_ts, invalid_ts, not_existing_ts
 import tscutter.analyze
 from tscutter.ffmpeg import InputFile
-from tscutter.common import InvalidTsFormat
+from tscutter.common import PtsMap, InvalidTsFormat
 import shutil
 
 def test_Analyze_Success():
@@ -16,7 +16,8 @@ def test_Analyze_Invalid():
         tscutter.analyze.AnalyzeVideo(InputFile(invalid_ts))
 
 def test_Split_Success():
-    outputFolder = tscutter.analyze.SplitVideo(salor_moon_C_02_ts, salor_moon_C_02_ptsmap)
+    outputFolder = salor_moon_C_02_ts.with_suffix('')
+    PtsMap(salor_moon_C_02_ptsmap).SplitVideo(videoPath=salor_moon_C_02_ts, outputFolder=outputFolder)
     assert outputFolder.is_dir()
     shutil.rmtree(outputFolder)
 

@@ -1,9 +1,9 @@
-import argparse, json, shutil
+import argparse, json
 from pathlib import Path
 import logging
 from tqdm import tqdm
 from .audio import DetectSilence
-from .common import FormatTimestamp, ClipToFilename, CopyPart
+from .common import FormatTimestamp, PtsMap
 from .ffmpeg import InputFile
 
 logger = logging.getLogger('tscutter.analyze')
@@ -137,24 +137,6 @@ def AnalyzeVideo(inputFile: InputFile, indexPath=None, outputFolder=None, minSil
         json.dump(ptsMap, f, indent=True)
     return indexPath
 
-def SplitVideo(videoPath, indexPath=None, outputFolder=None, quiet=False):
-    videoPath = Path(videoPath)
-    indexPath = Path(indexPath) if indexPath else videoPath.parent / '_metadata' / (videoPath.stem + '.ptsmap')
-    outputFolder = Path(outputFolder) if outputFolder else videoPath.with_suffix('')
-    if outputFolder.exists():
-        shutil.rmtree(outputFolder)
-    outputFolder.mkdir(parents=True)
-
-    with open(indexPath) as f:
-        ptsMap = json.load(f)
-    ptsList = list(ptsMap.keys())
-    clips = [ (ptsList[i], ptsList[i + 1]) for i in range(len(ptsList) - 1) ]
-    for clip in tqdm(clips, desc='splitting files', disable=quiet):
-        start, end = ptsMap[clip[0]]['next_start_pos'], ptsMap[clip[1]]['prev_end_pos']
-        outputPath = outputFolder / ClipToFilename(clip)
-        CopyPart(videoPath, outputPath, start, end)
-    return outputFolder
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Python tool to cut TS: split by silence and fine-tune by scene change PTS.')
     parser.add_argument('--quiet', '-q', action='store_true', help="don't output to the console")
@@ -178,4 +160,7 @@ if __name__ == "__main__":
     if args.command == 'analyze':
         AnalyzeVideo(inputFile=InputFile(args.input), indexPath=args.output, minSilenceLen=args.length, silenceThresh=args.threshold, quiet=args.quiet)
     elif args.command == 'split':
-        SplitVideo(inputFile=InputFile(args.input), indexPath=args.index, outputFolder=args.output, quiet=args.quiet)
+        videoPath = Path(args.input)
+        ptsPath = Path(args.index) if args.index else videoPath.parent / '_metadata' / (videoPath.stem + '.ptsmap')
+        outputFolder = Path(args.output) if args.output is not None else videoPath.with_suffix('')
+        PtsMap(ptsPath).SplitVideo(videoPath=videoPath, outputFolder=outputFolder)

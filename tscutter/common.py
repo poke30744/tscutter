@@ -1,4 +1,6 @@
-import sys, subprocess, os
+import sys, subprocess, os, json, shutil
+from pathlib import Path
+from tqdm import tqdm
 
 class TsFileNotFound(FileNotFoundError): ...
 class InvalidTsFormat(RuntimeError): ...
@@ -40,3 +42,39 @@ def CopyPart(src, dest, start, end, mode='wb', pbar=None, bufsize=1024*1024):
                 length -= chunk
                 if pbar is not None:
                     pbar.update(chunk)
+
+class PtsMap:
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        with self.path.open() as f:
+            self.data = json.load(f)
+
+    def Clips(self) -> list:
+        return [ ( float(list(self.data.keys())[i]),  float(list(self.data.keys())[i + 1]) ) for i in range(len(self.data) - 1) ]
+
+    def SelectClips(self, lengthLimit=150) -> tuple:
+        clips = self.Clips()
+        videoLen = clips[-1][1]
+        selectedClips = []
+        selectedLen = 0
+        for clip in reversed(sorted(clips, key=lambda clip: clip[1] - clip[0])):
+            clipLen = clip[1] - clip[0]
+            if clipLen < lengthLimit:
+                break
+            if selectedLen > videoLen / 2:
+                break
+            selectedClips.append(clip)
+            selectedLen += clipLen
+        return selectedClips, selectedLen
+    
+    def SplitVideo(self, videoPath: Path, outputFolder: Path, quiet=False):
+        if outputFolder.exists():
+            shutil.rmtree(outputFolder)
+        outputFolder.mkdir(parents=True)
+
+        ptsList = list(self.data.keys())
+        clips = [ (ptsList[i], ptsList[i + 1]) for i in range(len(ptsList) - 1) ]
+        for clip in tqdm(clips, desc='splitting files', disable=quiet):
+            start, end = self.data[clip[0]]['next_start_pos'], self.data[clip[1]]['prev_end_pos']
+            outputPath = outputFolder / ClipToFilename(clip)
+            CopyPart(videoPath, outputPath, start, end)
