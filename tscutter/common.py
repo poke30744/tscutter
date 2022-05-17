@@ -52,6 +52,14 @@ class PtsMap:
     def Clips(self) -> list:
         return [ ( float(list(self.data.keys())[i]),  float(list(self.data.keys())[i + 1]) ) for i in range(len(self.data) - 1) ]
 
+    def Duration(self) -> float:
+        ptsEnd = list(self.data.keys())[-1]
+        return self.data[ptsEnd]['prev_end_pts']
+    
+    def Length(self) -> int:
+        ptsEnd = list(self.data.keys())[-1]
+        return self.data[ptsEnd]['prev_end_pos']
+
     def SelectClips(self, lengthLimit=150) -> tuple:
         clips = self.Clips()
         videoLen = clips[-1][1]
