@@ -43,6 +43,23 @@ def CopyPart(src, dest, start, end, mode='wb', pbar=None, bufsize=1024*1024):
                 if pbar is not None:
                     pbar.update(chunk)
 
+def CopyPartPipe(src, pipe, start, end,  pbar=None, bufsize=1024*1024):
+    try:
+        with open(src, 'rb') as f1:
+            f1.seek(start)
+            length = end - start
+            while length:
+                chunk = min(bufsize, length)
+                data = f1.read(chunk)
+                pipe.write(data)
+                length -= chunk
+                if pbar is not None:
+                    pbar.update(chunk)
+        pipe.close()
+    except ValueError:
+        # pipe is closed by the other side
+        pass
+
 class PtsMap:
     def __init__(self, path: Path) -> None:
         self.path = path
@@ -86,3 +103,26 @@ class PtsMap:
             start, end = self.data[clip[0]]['next_start_pos'], self.data[clip[1]]['prev_end_pos']
             outputPath = outputFolder / ClipToFilename(clip)
             CopyPart(videoPath, outputPath, start, end)
+    
+    def ExtractClipsPipe(self, inFile: Path, clips: list[tuple[float]], pipe, quiet=True):
+        totalSize = 0
+        for clip in clips:
+            start, end = self.data[str(clip[0])]['next_start_pos'], self.data[str(clip[1])]['prev_end_pos']
+            totalSize += end - start
+        with tqdm(total=totalSize, unit='B', unit_scale=True, unit_divisor=1024, disable=quiet) as pbar:
+            for clip in clips:
+                start, end = self.data[str(clip[0])]['next_start_pos'], self.data[str(clip[1])]['prev_end_pos']
+                CopyPartPipe(inFile, pipe, start, end, pbar=pbar)
+    
+    def ExtractClipPipe(self, inFile: Path, clip: tuple[float], pipe, quiet=True):
+        if str(clip[0]) in self.data:
+            start = self.data[str(clip[0])]['next_start_pos']
+        else:
+            start = round(clip[0] * self.Length() / self.Duration())
+        if str(clip[1]) in self.data:
+            end = self.data[str(clip[1])]['prev_end_pos']
+        else:
+            end = round(clip[1] * self.Length() / self.Duration())
+        totalSize = end - start
+        with tqdm(total=totalSize, unit='B', unit_scale=True, unit_divisor=1024, disable=quiet) as pbar:
+            CopyPartPipe(inFile, pipe, start, end, pbar=pbar)
