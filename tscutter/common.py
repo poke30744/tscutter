@@ -55,7 +55,6 @@ def CopyPartPipe(src, pipe, start, end,  pbar=None, bufsize=1024*1024):
                 length -= chunk
                 if pbar is not None:
                     pbar.update(chunk)
-        pipe.close()
     except ValueError:
         # pipe is closed by the other side
         pass
@@ -113,6 +112,7 @@ class PtsMap:
             for clip in clips:
                 start, end = self.data[str(clip[0])]['next_start_pos'], self.data[str(clip[1])]['prev_end_pos']
                 CopyPartPipe(inFile, pipe, start, end, pbar=pbar)
+            pipe.close()
     
     def ExtractClipPipe(self, inFile: Path, clip: tuple[float], pipe, quiet=True):
         if str(clip[0]) in self.data:
@@ -126,3 +126,4 @@ class PtsMap:
         totalSize = end - start
         with tqdm(total=totalSize, unit='B', unit_scale=True, unit_divisor=1024, disable=quiet) as pbar:
             CopyPartPipe(inFile, pipe, start, end, pbar=pbar)
+            pipe.close()
