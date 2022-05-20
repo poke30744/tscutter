@@ -58,7 +58,8 @@ class InputFile:
                     'fps': programs[pid]['fps'],
                     'sar': programs[pid]['sar'],
                     'dar': programs[pid]['dar'],
-                    'soundTracks': programs[pid]['soundTracks']
+                    'soundTracks': programs[pid]['soundTracks'],
+                    'serviceId': int(pid.replace('Program', '').replace(' ', '').replace('\n', '')),
                     }
         return None
         
