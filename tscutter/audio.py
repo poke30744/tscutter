@@ -4,9 +4,14 @@ from pathlib import Path
 from pydub import AudioSegment
 from pydub.silence import detect_silence
 from .ffmpeg import InputFile
-from .common import FormatTimestamp
+from .common import FormatTimestamp, CheckExtenralCommand, ProgramNotFound
 
 logger = logging.getLogger('tscutter.audio')
+
+try:
+    AudioSegment.converter = CheckExtenralCommand('ffmpeg')
+except ProgramNotFound:
+    logger.warn('Cannot find ffmpeg in path!')
 
 def FormatTimestamp(timestamp):
     seconds = round(timestamp)

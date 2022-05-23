@@ -7,7 +7,7 @@ from .common import CheckExtenralCommand, TsFileNotFound, InvalidTsFormat
 
 class InputFile:
     def __init__(self, path) -> None:
-        CheckExtenralCommand('ffmpeg')
+        self.ffmpeg = CheckExtenralCommand('ffmpeg')
         self.path = Path(path)
         if not self.path.is_file():
             raise TsFileNotFound(f'"{self.path.name}" not found!')
@@ -68,7 +68,7 @@ class InputFile:
             return self.__info
         pipeObj = subprocess.Popen(
             [
-                'ffmpeg', '-hide_banner',
+                self.ffmpeg, '-hide_banner',
                 # seek 30s to jump over the begining
                 # over seeking is safe and will be ignored by ffmpeg
                 '-ss', '30', '-i', self.path
@@ -96,7 +96,7 @@ class InputFile:
         output.mkdir(parents=True)
 
         args = [
-                'ffmpeg', '-hide_banner', '-y',
+                self.ffmpeg, '-hide_banner', '-y',
                 '-ss', str(ss), '-to', str(to), '-i', self.path,
                 ]
         
@@ -142,7 +142,7 @@ class InputFile:
     def ExtractFrameProps(self, ss, to, nosad=False):
         with tempfile.TemporaryDirectory(prefix='logoNet_frames_') as tmpLogoFolder:
             args = [
-                'ffmpeg', '-hide_banner',
+                self.ffmpeg, '-hide_banner',
                 '-ss', str(ss), '-to', str(to),
                 '-i', self.path,
                 '-filter:v', "select='gte(t,0)',showinfo", '-vsync', '0', '-frame_pts', '1',
