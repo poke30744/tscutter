@@ -115,15 +115,22 @@ class PtsMap:
             pipe.close()
     
     def ExtractClipPipe(self, inFile: Path, clip: tuple[float], pipe, quiet=True):
-        if str(clip[0]) in self.data:
-            start = self.data[str(clip[0])]['next_start_pos']
-        else:
-            start = round(clip[0] * self.Length() / self.Duration())
-        if str(clip[1]) in self.data:
-            end = self.data[str(clip[1])]['prev_end_pos']
-        else:
-            end = round(clip[1] * self.Length() / self.Duration())
-        totalSize = end - start
+        for pts in [ float(key) for key in self.data.keys() ]:
+            if pts <= clip[0]:
+                ptsStart = pts
+            if pts >= clip[1]:
+                ptsEnd = pts
+                break
+    
+        ptsStartPos =  self.data[str(ptsStart)]['next_start_pos']
+        ptsEndPos =  self.data[str(ptsEnd)]['prev_end_pos']
+
+        ratio = (ptsEndPos - ptsStartPos) / (ptsEnd - ptsStart)
+
+        start = round(ptsStartPos + (clip[0] - ptsStart) * ratio) // 188 * 188
+        totalSize = round((clip[1] - clip[0]) * ratio)
+        end = start + totalSize
+
         with tqdm(total=totalSize, unit='B', unit_scale=True, unit_divisor=1024, disable=quiet) as pbar:
             CopyPartPipe(inFile, pipe, start, end, pbar=pbar)
             pipe.close()
