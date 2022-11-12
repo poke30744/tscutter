@@ -64,8 +64,10 @@ class InputFile:
         return None
         
     def GetInfo(self):
-        if hasattr(self, '__info'):
+        try:
             return self.__info
+        except AttributeError:
+            pass
         pipeObj = subprocess.Popen(
             [
                 self.ffmpeg, '-hide_banner',
