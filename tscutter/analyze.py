@@ -137,7 +137,7 @@ def AnalyzeVideo(inputFile: InputFile, indexPath=None, outputFolder=None, minSil
         json.dump(ptsMap, f, indent=True)
     return indexPath
 
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser(description='Python tool to cut TS: split by silence and fine-tune by scene change PTS.')
     parser.add_argument('--quiet', '-q', action='store_true', help="don't output to the console")
     subparsers = parser.add_subparsers(required=True, title='subcommands', dest='command')
@@ -164,3 +164,6 @@ if __name__ == "__main__":
         ptsPath = Path(args.index) if args.index else videoPath.parent / '_metadata' / (videoPath.stem + '.ptsmap')
         outputFolder = Path(args.output) if args.output is not None else videoPath.with_suffix('')
         PtsMap(ptsPath).SplitVideo(videoPath=videoPath, outputFolder=outputFolder)
+
+if __name__ == "__main__":
+    main()
