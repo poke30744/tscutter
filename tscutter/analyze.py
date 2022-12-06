@@ -125,7 +125,7 @@ def AnalyzeVideo(inputFile: InputFile, indexPath=None, outputFolder=None, minSil
         indexPath = outputFolder / '_metadata' / (inputFile.path.stem + '.ptsmap')
     indexPath.parent.mkdir(parents=True, exist_ok=True)
 
-    separatorIntervals = DetectSilence(inputFile=inputFile, min_silence_len=minSilenceLen, silence_thresh=silenceThresh)
+    separatorIntervals = DetectSilence(inputFile=inputFile, min_silence_len=minSilenceLen, silence_thresh=silenceThresh, quiet=quiet)
     mergedIntervals = MergeIntervals(separatorIntervals)
     logger.info(f'len(mergedIntervals): {len(mergedIntervals)}')
     cutLocations = LookingForCutLocations(inputFile=inputFile, intervals=mergedIntervals, quiet=quiet)
