@@ -20,9 +20,9 @@ def MergeIntervals(intervals):
             result.append(interval)
     return result
 
-def FindSplitPosition(inputFile: InputFile, ss, to):
+def FindSplitPosition(inputFile: InputFile, ss, to, splitPosShift=1):
     # We assume scene change occurs between [ {interval start} - 1 sec, {internval end} + 1 sec ]
-    propList = inputFile.ExtractFrameProps(((ss-1) if (ss-1) > 0 else 0), to+1)
+    propList = inputFile.ExtractFrameProps(((ss-splitPosShift) if (ss-splitPosShift) > 0 else 0), to+splitPosShift)
     if not propList:
         return None, None, None # ffmpeg error
     
@@ -51,10 +51,10 @@ def FindSplitPosition(inputFile: InputFile, ss, to):
         nextStart = sceneChange
     return prevEnd, sceneChange, nextStart
 
-def LookingForCutLocations(inputFile: InputFile, intervals, quiet=True):
+def LookingForCutLocations(inputFile: InputFile, intervals, splitPosShift, quiet=True):
     locations = []
     for interval in tqdm(intervals, disable=quiet, desc='Looking for cut position'):
-        prevEnd, sceneChange, nextStart = FindSplitPosition(inputFile, interval[0] / 1000, interval[1] / 1000)
+        prevEnd, sceneChange, nextStart = FindSplitPosition(inputFile, interval[0] / 1000, interval[1] / 1000, splitPosShift)
         if prevEnd is not None and sceneChange is not None and nextStart is not None:
             locations.append([prevEnd, sceneChange, nextStart])
     return locations
@@ -116,7 +116,7 @@ def GeneratePtsMap(inputFile: InputFile, cutLocations):
 
     return ptsmapDedup
 
-def AnalyzeVideo(inputFile: InputFile, indexPath=None, outputFolder=None, minSilenceLen=800, silenceThresh=-80, quiet=False):
+def AnalyzeVideo(inputFile: InputFile, indexPath=None, outputFolder=None, minSilenceLen=800, silenceThresh=-80, splitPosShift=1, quiet=False):
     if indexPath is None:
         if outputFolder is None:
             outputFolder = inputFile.path.parent
@@ -128,7 +128,7 @@ def AnalyzeVideo(inputFile: InputFile, indexPath=None, outputFolder=None, minSil
     separatorIntervals = DetectSilence(inputFile=inputFile, min_silence_len=minSilenceLen, silence_thresh=silenceThresh, quiet=quiet)
     mergedIntervals = MergeIntervals(separatorIntervals)
     logger.info(f'len(mergedIntervals): {len(mergedIntervals)}')
-    cutLocations = LookingForCutLocations(inputFile=inputFile, intervals=mergedIntervals, quiet=quiet)
+    cutLocations = LookingForCutLocations(inputFile=inputFile, intervals=mergedIntervals, splitPosShift=splitPosShift, quiet=quiet)
     logger.info(f'len(cutLocations): {len(cutLocations)}')
     ptsMap = GeneratePtsMap(inputFile=inputFile, cutLocations=cutLocations)
     logger.info(f'len(ptsMap): {len(ptsMap)}')
