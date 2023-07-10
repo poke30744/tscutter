@@ -1,3 +1,4 @@
+from functools import cache
 import sys, subprocess, os, json, shutil
 from pathlib import Path
 from tqdm import tqdm
@@ -7,6 +8,7 @@ class InvalidTsFormat(RuntimeError): ...
 class ProgramNotFound(RuntimeError): ...
 class EncodingError(RuntimeError): ...
 
+@cache
 def CheckExtenralCommand(command):
     if sys.platform == 'win32':
         pipeObj = subprocess.Popen(f'cmd /c where {command}', stdout=subprocess.PIPE)
