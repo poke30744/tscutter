@@ -20,6 +20,7 @@ setuptools.setup(
         'tqdm',
         'numpy',
         'Pillow',
+        'jsonpath-ng',
     ],
     entry_points={
         'console_scripts': [

@@ -60,7 +60,7 @@ def LookingForCutLocations(inputFile: InputFile, intervals, splitPosShift, quiet
     return locations
 
 def GeneratePtsMap(inputFile: InputFile, cutLocations):
-    duration = inputFile.GetInfo()['duration']
+    duration = inputFile.GetInfo().duration
     fileSize = inputFile.path.stat().st_size
     ptsmap = {
         0.0: {

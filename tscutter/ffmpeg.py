@@ -1,95 +1,57 @@
-import shutil, subprocess, re, tempfile
+from functools import cache
+import json
+import shutil, subprocess, tempfile
 from pathlib import Path
+from dataclasses import dataclass
 from tqdm import tqdm
 import numpy as np
 from PIL import Image
+import jsonpath_ng.ext as jp
 from .common import CheckExtenralCommand, TsFileNotFound, InvalidTsFormat
+
+@dataclass
+class VideoInfo:
+    duration: float 
+    width: int
+    height: int
+    fps: float
+    sar: tuple[int : int]
+    dar: tuple[int : int]
+    soundTracks: int
+    serviceId: int
 
 class InputFile:
     def __init__(self, path) -> None:
         self.ffmpeg = CheckExtenralCommand('ffmpeg')
+        self.ffprobe = CheckExtenralCommand('ffprobe')
         self.path = Path(path)
         if not self.path.is_file():
-            raise TsFileNotFound(f'"{self.path.name}" not found!')
+            raise TsFileNotFound(f'"{self.path.name}" not found!')    
     
-    def __GetInfoFromLines(self, lines):
-        suffix = self.path.suffix
-        duration = 0
-        if suffix in ('.mp4', '.mkv'):
-            pid = 0
-            programs = { 0 : { 'soundTracks' : 0 } }
-        else:
-            programs = {}
-        for line in lines:
-            if 'Program ' in line:
-                pid = line
-                programs[pid] = { 'soundTracks' : 0 }
-            elif 'Duration' in line:
-                durationFields = line.split(',')[0].replace('Duration:', '').strip().split(':')
-                duration = float(durationFields[0]) * 3600 + float(durationFields[1]) * 60  + float(durationFields[2])
-            if 'Stream #' in line:
-                if 'Video:' in line and not ('352x240' in line):
-                    for item in re.findall(r'\d+x\d+', line):
-                        sizeFields = item.split('x')
-                        if sizeFields[0] != '0' and sizeFields[1] != '0':
-                            programs[pid]['width'], programs[pid]['height'] = int(sizeFields[0]), int(sizeFields[1])
-                            break
-                    for item in line.split(','):
-                        if ' fps' in item:
-                            programs[pid]['fps'] = float(item.replace(' fps', ''))
-                            break
-                    if 'SAR ' in line and 'DAR ' in line:
-                        sar = line.split('SAR ')[1].split(' ')[0].split(':')
-                        sar = int(sar[0]), int(sar[1])
-                        dar = line.split('DAR ')[1].split(' ')[0].split(']')[0].split(':')
-                        dar = int(dar[0]), int(dar[1])
-                        programs[pid]['sar'] = sar
-                        programs[pid]['dar'] = dar
-                elif 'Audio:' in line and 'Hz,' in line:
-                    programs[pid]['soundTracks'] += 1
-            if 'Press [q] to stop' in line or ' time=' in line:
-                break
-        for pid in programs:
-            if programs[pid]['soundTracks'] > 0:
-                return {
-                    'duration': duration, 
-                    'width': programs[pid]['width'],
-                    'height': programs[pid]['height'],
-                    'fps': programs[pid]['fps'],
-                    'sar': programs[pid]['sar'],
-                    'dar': programs[pid]['dar'],
-                    'soundTracks': programs[pid]['soundTracks'],
-                    'serviceId': int(pid.replace('Program', '').replace(' ', '').replace('\n', '')),
-                    }
-        return None
+    @cache
+    def GetInfo(self) -> VideoInfo: 
+        with subprocess.Popen(f'"{self.ffprobe}" -v quiet -print_format json -show_format -show_streams -show_programs "{self.path}"', stdout=subprocess.PIPE) as pipeObj:
+            try:
+                probeInfoJson = pipeObj.stdout.read()
+                probeInfo = json.loads(probeInfoJson)
+            except IndexError:
+                raise InvalidTsFormat(f'"{self.path.name}" is invalid!')
+            except ValueError:
+                raise InvalidTsFormat(f'"{self.path.name}" is invalid!')
+            except KeyError:
+                raise InvalidTsFormat(f'"{self.path.name}" is invalid!')
         
-    def GetInfo(self):
-        try:
-            return self.__info
-        except AttributeError:
-            pass
-        pipeObj = subprocess.Popen(
-            [
-                self.ffmpeg, '-hide_banner',
-                # seek 30s to jump over the begining
-                # over seeking is safe and will be ignored by ffmpeg
-                '-ss', '30', '-i', self.path
-            ], 
-            stderr=subprocess.PIPE,
-            universal_newlines=True,
-            errors='ignore')
-        try:
-            self.__info = self.__GetInfoFromLines(pipeObj.stderr)
-        except IndexError:
-            raise InvalidTsFormat(f'"{self.path.name}" is invalid!')
-        except ValueError:
-            raise InvalidTsFormat(f'"{self.path.name}" is invalid!')
-        except KeyError:
-            raise InvalidTsFormat(f'"{self.path.name}" is invalid!')
-        pipeObj.wait()
-        if self.__info is None:
-            raise InvalidTsFormat(f'"{self.path.name}" is invalid!')
-        return self.__info
+        videoInfo = VideoInfo(
+            duration = float(jp.parse('$.streams[?(@.codec_type=="video")].duration').find(probeInfo)[0].value),
+            width = jp.parse('$.streams[?(@.codec_type=="video")].width').find(probeInfo)[0].value,
+            height = jp.parse('$.streams[?(@.codec_type=="video")].height').find(probeInfo)[0].value,
+            fps = eval(jp.parse('$.streams[?(@.codec_type=="video")].avg_frame_rate').find(probeInfo)[0].value),
+            sar = jp.parse('$.streams[?(@.codec_type=="video")].sample_aspect_ratio').find(probeInfo)[0].value.split(':'),
+            dar = jp.parse('$.streams[?(@.codec_type=="video")].display_aspect_ratio').find(probeInfo)[0].value.split(':'),
+            soundTracks = len(jp.parse('$.streams[?(@.codec_type=="audio")]').find(probeInfo)),
+            serviceId = jp.parse('$.programs[?(@.nb_streams>0)].program_id').find(probeInfo)[0].value,
+        )        
+        return videoInfo
 
     def ExtractStream(self, output=None, ss=0, to=999999, videoTracks=None, audioTracks=None, toWav=False, quiet=False):
         output = self.path.with_suffix('') if output is None else Path(output)
@@ -112,7 +74,7 @@ class InputFile:
         info = self.GetInfo()
         extName = 'wav' if toWav else 'aac'
         if audioTracks is None:
-            audioTracks =  list(range(info['soundTracks']))
+            audioTracks =  list(range(info.soundTracks))
         for i in audioTracks:
             args += [ '-map', f'0:a:{i}' ]
             if toWav:
@@ -123,12 +85,7 @@ class InputFile:
             args += [ output / f'audio_{i}.{extName}' ]
 
         pipeObj = subprocess.Popen(args, stderr=subprocess.PIPE, universal_newlines='\r', errors='ignore')
-        info = self.__GetInfoFromLines(pipeObj.stderr)
-        if info is None:
-            raise InvalidTsFormat(f'"{self.path.name}" is invalid!')
-    
-        if to > info['duration']:
-            to = info['duration']
+        to = min(to, info.duration)
         with tqdm(total=to - ss, unit='secs', disable=quiet) as pbar:
             pbar.set_description('Extracting streams')
             for line in pipeObj.stderr:
@@ -158,40 +115,35 @@ class InputFile:
                 args += [
                     f'{tmpLogoFolder}/out%8d.bmp'
             ]
-            pipeObj = subprocess.Popen(args, stderr=subprocess.PIPE, universal_newlines='\r', errors='ignore')
-            propList = []
-            info = self.__GetInfoFromLines(pipeObj.stderr)
-            if info is None:
-                raise InvalidTsFormat(f'"{self.path.name}" is invalid!')
-            if to > info['duration']:
-                to = info['duration']
-            with tqdm(total=to - ss, unit='secs', disable=not nosad) as pbar:
-                pbar.set_description('Extracting props')
-                for line in pipeObj.stderr:
-                    if 'pts_time:' in line:
-                        ptsTime = float(line.split('pts_time:')[1].lstrip().split(' ')[0])
-                        pos = int(line.split('pos:')[1].lstrip().split(' ')[0])
-                        checksum = line.split('checksum:')[1].split(' ')[0]
-                        planeChecksum = line.split('plane_checksum:')[1].split('[')[1].split(']')[0].split(' ')
-                        meanStrList = line.split('mean:')[1].split('\x08')[0].strip('[]').strip().split(' ')
-                        stdevStrList = line.split('stdev:')[1].split('\x08')[0].strip('[]').strip().split(' ')
-                        mean = [ float(i) for i in meanStrList ]
-                        stdev = [ float(i) for i in stdevStrList ]
-                        isKey = int(line.split(' iskey:')[1].split(' ')[0])
-                        frameType = line.split(' type:')[1].split(' ')[0]
-                        propList.append({
-                            'ptsTime': ptsTime + ss,
-                            'pos': pos,
-                            'checksum': checksum,
-                            'plane_checksum': planeChecksum,
-                            'mean': mean,
-                            'stdev': stdev,
-                            'isKey': isKey,
-                            'type': frameType,
-                        })
-                        pbar.update(ptsTime - pbar.n)
-                pipeObj.wait()
-                pbar.update(to - ss - pbar.n)
+            with subprocess.Popen(args, stderr=subprocess.PIPE, universal_newlines='\r', errors='ignore') as pipeObj:
+                propList = []
+                to = min(to, self.GetInfo().duration)
+                with tqdm(total=to - ss, unit='secs', disable=not nosad) as pbar:
+                    pbar.set_description('Extracting props')
+                    for line in pipeObj.stderr:
+                        if 'pts_time:' in line:
+                            ptsTime = float(line.split('pts_time:')[1].lstrip().split(' ')[0])
+                            pos = int(line.split('pos:')[1].lstrip().split(' ')[0])
+                            checksum = line.split('checksum:')[1].split(' ')[0]
+                            planeChecksum = line.split('plane_checksum:')[1].split('[')[1].split(']')[0].split(' ')
+                            meanStrList = line.split('mean:')[1].split('\x08')[0].strip('[]').strip().split(' ')
+                            stdevStrList = line.split('stdev:')[1].split('\x08')[0].strip('[]').strip().split(' ')
+                            mean = [ float(i) for i in meanStrList ]
+                            stdev = [ float(i) for i in stdevStrList ]
+                            isKey = int(line.split(' iskey:')[1].split(' ')[0])
+                            frameType = line.split(' type:')[1].split(' ')[0]
+                            propList.append({
+                                'ptsTime': ptsTime + ss,
+                                'pos': pos,
+                                'checksum': checksum,
+                                'plane_checksum': planeChecksum,
+                                'mean': mean,
+                                'stdev': stdev,
+                                'isKey': isKey,
+                                'type': frameType,
+                            })
+                            pbar.update(ptsTime - pbar.n)
+                    pbar.update(to - ss - pbar.n)
             if not nosad:
                 pathList = sorted(list(Path(tmpLogoFolder).glob('*.bmp')))
                 # The clip is corrputed if we cannot extract any image
