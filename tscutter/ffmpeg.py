@@ -15,8 +15,8 @@ class VideoInfo:
     width: int
     height: int
     fps: float
-    sar: tuple[int : int]
-    dar: tuple[int : int]
+    sar: tuple[int, int]
+    dar: tuple[int, int]
     soundTracks: int
     serviceId: int
 
