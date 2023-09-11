@@ -7,7 +7,7 @@ from tqdm import tqdm
 import numpy as np
 from PIL import Image
 import jsonpath_ng.ext as jp
-from .common import CheckExtenralCommand, TsFileNotFound, InvalidTsFormat
+from .common import CheckExtenralCommand, GetShortPath, TsFileNotFound, InvalidTsFormat
 
 @dataclass
 class VideoInfo:
@@ -61,7 +61,7 @@ class InputFile:
 
         args = [
                 self.ffmpeg, '-hide_banner', '-y',
-                '-ss', str(ss), '-to', str(to), '-i', self.path,
+                '-ss', str(ss), '-to', str(to), '-i', GetShortPath(self.path),
                 ]
         
         # copy video tracks
@@ -103,7 +103,7 @@ class InputFile:
             args = [
                 self.ffmpeg, '-hide_banner',
                 '-ss', str(ss), '-to', str(to),
-                '-i', self.path,
+                '-i', GetShortPath(self.path),
                 '-filter:v', "select='gte(t,0)',showinfo", '-vsync', '0', '-frame_pts', '1',
             ]
             if nosad:

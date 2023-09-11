@@ -21,6 +21,18 @@ def CheckExtenralCommand(command):
     else:
         raise ProgramNotFound(f'{command} not found in $PATH!')
 
+@cache 
+def GetShortPath(path: Path) -> Path:
+    if sys.platform == 'win32':
+        import win32api
+        import pywintypes
+        try:
+            return Path(win32api.GetShortPathName(str(path)))
+        except pywintypes.error:
+            return path
+    else:
+        return path
+
 def FormatTimestamp(timestamp):
     seconds = round(timestamp)
     hour = seconds // 3600
