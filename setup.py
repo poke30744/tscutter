@@ -20,8 +20,8 @@ setuptools.setup(
         'tqdm',
         'numpy',
         'Pillow',
-        'jsonpath-ng',
-    ],
+        'jsonpath-ng'
+    ] + (['pywin32'] if os.name == 'nt' else []),
     entry_points={
         'console_scripts': [
             'tscutter=tscutter.analyze:main',
