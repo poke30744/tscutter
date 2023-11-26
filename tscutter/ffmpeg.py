@@ -30,7 +30,7 @@ class InputFile:
     
     @cache
     def GetInfo(self) -> VideoInfo: 
-        with subprocess.Popen(f'"{self.ffprobe}" -v quiet -print_format json -show_format -show_streams -show_programs "{self.path}"', stdout=subprocess.PIPE) as pipeObj:
+        with subprocess.Popen(f'"{self.ffprobe}" -v quiet -print_format json -show_format -show_streams -show_programs "{self.path}"', stdout=subprocess.PIPE, shell=True) as pipeObj:
             try:
                 probeInfoJson = pipeObj.stdout.read()
                 probeInfo = json.loads(probeInfoJson)
