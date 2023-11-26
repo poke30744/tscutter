@@ -15,7 +15,7 @@ def CheckExtenralCommand(command):
     else:
         pipeObj = subprocess.Popen(f'which {command}', stdout=subprocess.PIPE, shell=True)
     pipeObj.wait()
-    path = pipeObj.stdout.read().decode().split('\r\n')[0]
+    path = pipeObj.stdout.read().decode().split('\r\n')[0].strip()
     if os.path.exists(path):
         return path
     else:
