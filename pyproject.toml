@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tscutter"
+dynamic = ["version"]
+description = "Cut MEPG TS files into clips"
+readme = "README.md"
+authors = [
+    {name = "poke30744", email = "poke30744@gmail.com"}
+]
+license = "MIT"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "pydub",
+    "tqdm",
+    "numpy",
+    "Pillow",
+    "jsonpath-ng",
+    "pywin32; platform_system == 'Windows'",
+]
+
+[project.scripts]
+tscutter = "tscutter.analyze:main"
+
+[project.urls]
+Homepage = "https://github.com/poke30744/tscutter/blob/main/README.md"
+
+[tool.setuptools]
+packages = ["tscutter"]
+include-package-data = true
+
+[tool.setuptools.dynamic]
+version = {attr = "tscutter.__version__"}
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-cov",
+]
+
+[tool.uv]
+required-version = ">=0.9.0"
