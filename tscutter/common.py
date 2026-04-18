@@ -112,7 +112,7 @@ class PtsMap:
 
         ptsList = list(self.data.keys())
         clips = [ (ptsList[i], ptsList[i + 1]) for i in range(len(ptsList) - 1) ]
-        for clip in tqdm(clips, desc='splitting files', disable=quiet):
+        for clip in tqdm(clips, desc='splitting files'):
             start, end = self.data[clip[0]]['next_start_pos'], self.data[clip[1]]['prev_end_pos']
             outputPath = outputFolder / ClipToFilename(clip)
             CopyPart(videoPath, outputPath, start, end)
@@ -122,7 +122,7 @@ class PtsMap:
         for clip in clips:
             start, end = self.data[str(clip[0])]['next_start_pos'], self.data[str(clip[1])]['prev_end_pos']
             totalSize += end - start
-        with tqdm(total=totalSize, unit='B', unit_scale=True, unit_divisor=1024, disable=quiet) as pbar:
+        with tqdm(total=totalSize, unit='B', unit_scale=True, unit_divisor=1024) as pbar:
             for clip in clips:
                 start, end = self.data[str(clip[0])]['next_start_pos'], self.data[str(clip[1])]['prev_end_pos']
                 CopyPartPipe(inFile, pipe, start, end, pbar=pbar)
@@ -145,6 +145,6 @@ class PtsMap:
         totalSize = round((clip[1] - clip[0]) * ratio)
         end = start + totalSize
 
-        with tqdm(total=totalSize, unit='B', unit_scale=True, unit_divisor=1024, disable=quiet) as pbar:
+        with tqdm(total=totalSize, unit='B', unit_scale=True, unit_divisor=1024) as pbar:
             CopyPartPipe(inFile, pipe, start, end, pbar=pbar)
             pipe.close()

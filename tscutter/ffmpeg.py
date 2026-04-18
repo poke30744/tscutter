@@ -86,7 +86,7 @@ class InputFile:
 
         pipeObj = subprocess.Popen(args, stderr=subprocess.PIPE, universal_newlines='\r', errors='ignore')
         to = min(to, info.duration)
-        with tqdm(total=to - ss, unit='secs', disable=quiet) as pbar:
+        with tqdm(total=to - ss, unit='secs') as pbar:
             pbar.set_description('Extracting streams')
             for line in pipeObj.stderr:
                 if 'time=' in line:
@@ -118,7 +118,7 @@ class InputFile:
             with subprocess.Popen(args, stderr=subprocess.PIPE, universal_newlines='\r', errors='ignore') as pipeObj:
                 propList = []
                 to = min(to, self.GetInfo().duration)
-                with tqdm(total=to - ss, unit='secs', disable=not nosad) as pbar:
+                with tqdm(total=to - ss, unit='secs') as pbar:
                     pbar.set_description('Extracting props')
                     for line in pipeObj.stderr:
                         if 'pts_time:' in line:

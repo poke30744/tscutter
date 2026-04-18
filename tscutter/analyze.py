@@ -53,7 +53,7 @@ def FindSplitPosition(inputFile: InputFile, ss, to, splitPosShift=1):
 
 def LookingForCutLocations(inputFile: InputFile, intervals, splitPosShift, quiet=True):
     locations = []
-    for interval in tqdm(intervals, disable=quiet, desc='Looking for cut position'):
+    for interval in tqdm(intervals, desc='Looking for cut position'):
         prevEnd, sceneChange, nextStart = FindSplitPosition(inputFile, interval[0] / 1000, interval[1] / 1000, splitPosShift)
         if prevEnd is not None and sceneChange is not None and nextStart is not None:
             locations.append([prevEnd, sceneChange, nextStart])
