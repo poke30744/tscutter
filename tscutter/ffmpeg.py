@@ -126,8 +126,8 @@ class InputFile:
                             pos = int(line.split('pos:')[1].lstrip().split(' ')[0])
                             checksum = line.split('checksum:')[1].split(' ')[0]
                             planeChecksum = line.split('plane_checksum:')[1].split('[')[1].split(']')[0].split(' ')
-                            meanStrList = line.split('mean:')[1].split('\x08')[0].strip('[]').strip().split(' ')
-                            stdevStrList = line.split('stdev:')[1].split('\x08')[0].strip('[]').strip().split(' ')
+                            meanStrList = line.split('mean:')[1].split('\x08')[0].split(']')[0].lstrip('[').split()
+                            stdevStrList = line.split('stdev:')[1].split('\x08')[0].split(']')[0].lstrip('[').split()
                             mean = [ float(i) for i in meanStrList ]
                             stdev = [ float(i) for i in stdevStrList ]
                             isKey = int(line.split(' iskey:')[1].split(' ')[0])
