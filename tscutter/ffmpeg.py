@@ -24,9 +24,10 @@ class InputFile:
     def __init__(self, path) -> None:
         self.ffmpeg = shutil.which('ffmpeg')
         self.ffprobe = shutil.which('ffprobe')
+        self.ffmpeg5 = shutil.which('ffmpeg5')
         self.path = Path(path)
         if not self.path.is_file():
-            raise TsFileNotFound(f'"{self.path.name}" not found!')    
+            raise TsFileNotFound(f'"{self.path.name}" not found!')
     
     @cache
     def GetInfo(self) -> VideoInfo:
@@ -98,7 +99,7 @@ class InputFile:
     def ExtractFrameProps(self, ss, to, nosad=False):
         with tempfile.TemporaryDirectory(prefix='logoNet_frames_') as tmpLogoFolder:
             args = [
-                self.ffmpeg, '-hide_banner',
+                self.ffmpeg5, '-hide_banner',
                 '-ss', str(ss), '-to', str(to),
                 '-i', str(self.path),
                 '-filter:v', "select='gte(t,0)',showinfo", '-vsync', '0', '-frame_pts', '1',
