@@ -6,8 +6,8 @@ from dataclasses import dataclass
 from tqdm import tqdm
 import numpy as np
 from PIL import Image
-import jsonpath_ng.ext as jp
-from .common import CheckExtenralCommand, TsFileNotFound, InvalidTsFormat
+import ffmpeg
+from .common import TsFileNotFound, InvalidTsFormat
 
 @dataclass
 class VideoInfo:
@@ -22,35 +22,32 @@ class VideoInfo:
 
 class InputFile:
     def __init__(self, path) -> None:
-        self.ffmpeg = CheckExtenralCommand('ffmpeg')
-        self.ffprobe = CheckExtenralCommand('ffprobe')
+        self.ffmpeg = shutil.which('ffmpeg')
+        self.ffprobe = shutil.which('ffprobe')
         self.path = Path(path)
         if not self.path.is_file():
             raise TsFileNotFound(f'"{self.path.name}" not found!')    
     
     @cache
-    def GetInfo(self) -> VideoInfo: 
-        with subprocess.Popen(f'"{self.ffprobe}" -v quiet -print_format json -show_format -show_streams -show_programs "{self.path}"', stdout=subprocess.PIPE, shell=True) as pipeObj:
-            try:
-                probeInfoJson = pipeObj.stdout.read()
-                probeInfo = json.loads(probeInfoJson)
-            except IndexError:
-                raise InvalidTsFormat(f'"{self.path.name}" is invalid!')
-            except ValueError:
-                raise InvalidTsFormat(f'"{self.path.name}" is invalid!')
-            except KeyError:
-                raise InvalidTsFormat(f'"{self.path.name}" is invalid!')
-        
+    def GetInfo(self) -> VideoInfo:
+        try:
+            probeInfo = ffmpeg.probe(str(self.path), cmd=self.ffprobe, show_programs=None)
+        except (ffmpeg.Error, json.JSONDecodeError, KeyError):
+            raise InvalidTsFormat(f'"{self.path.name}" is invalid!')
+
+        video_stream = next(s for s in probeInfo['streams'] if s.get('codec_type') == 'video')
+        audio_streams = [s for s in probeInfo['streams'] if s.get('codec_type') == 'audio']
+
         videoInfo = VideoInfo(
-            duration = float(jp.parse('$.streams[?(@.codec_type=="video")].duration').find(probeInfo)[0].value),
-            width = jp.parse('$.streams[?(@.codec_type=="video")].width').find(probeInfo)[0].value,
-            height = jp.parse('$.streams[?(@.codec_type=="video")].height').find(probeInfo)[0].value,
-            fps = eval(jp.parse('$.streams[?(@.codec_type=="video")].avg_frame_rate').find(probeInfo)[0].value),
-            sar = jp.parse('$.streams[?(@.codec_type=="video")].sample_aspect_ratio').find(probeInfo)[0].value.split(':'),
-            dar = jp.parse('$.streams[?(@.codec_type=="video")].display_aspect_ratio').find(probeInfo)[0].value.split(':'),
-            soundTracks = len(jp.parse('$.streams[?(@.codec_type=="audio")]').find(probeInfo)),
-            serviceId = jp.parse('$.programs[?(@.nb_streams>0)].program_id').find(probeInfo)[0].value,
-        )        
+            duration = float(video_stream['duration']),
+            width = video_stream['width'],
+            height = video_stream['height'],
+            fps = eval(video_stream['avg_frame_rate']),
+            sar = video_stream['sample_aspect_ratio'].split(':'),
+            dar = video_stream['display_aspect_ratio'].split(':'),
+            soundTracks = len(audio_streams),
+            serviceId = next(p['program_id'] for p in probeInfo['programs'] if p['nb_streams'] > 0),
+        )
         return videoInfo
 
     def ExtractStream(self, output=None, ss=0, to=999999, videoTracks=None, audioTracks=None, toWav=False, quiet=False):

@@ -21,7 +21,7 @@ dependencies = [
     "tqdm",
     "numpy",
     "Pillow",
-    "jsonpath-ng",
+    "ffmpeg-python",
     "pywin32; platform_system == 'Windows'",
 ]
 

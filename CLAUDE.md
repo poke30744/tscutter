@@ -45,8 +45,8 @@ pytest tests/
 ### Core Modules
 - `tscutter.analyze` – main orchestration: silence detection, scene‑change location, PTS map generation.
 - `tscutter.audio` – silence detection using `pydub`/`ffmpeg`.
-- `tscutter.ffmpeg` – `InputFile` class wraps `ffmpeg`/`ffprobe` subprocess calls for extracting streams, frame properties, and video metadata.
-- `tscutter.common` – `PtsMap` class for reading/writing `.ptsmap` files and splitting video by byte positions; utility functions for path handling and timestamp formatting.
+- `tscutter.ffmpeg` – `InputFile` class wraps `ffmpeg`/`ffprobe` subprocess calls for extracting streams, frame properties, and video metadata. Uses `ffmpeg-python` for `ffprobe` JSON probing.
+- `tscutter.common` – `PtsMap` class for reading/writing `.ptsmap` files and splitting video by byte positions; `FormatTimestamp` and `ClipToFilename` utilities. Commands are resolved via `shutil.which()`.
 
 ### Workflow
 1. `DetectSilence` (audio module) extracts a WAV track, runs `pydub.silence.detect_silence`.
@@ -57,8 +57,7 @@ pytest tests/
 
 ### Dependencies & External Tools
 - **FFmpeg** – required for audio extraction and frame‑property analysis. Must be in `PATH`.
-- **pywin32** – Windows‑only, automatically included on Windows platforms.
-- Python dependencies: `pydub`, `tqdm`, `numpy`, `Pillow`, `jsonpath‑ng`.
+- Python dependencies: `pydub`, `tqdm`, `numpy`, `Pillow`, `ffmpeg-python`.
 
 ## Testing
 

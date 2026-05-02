@@ -1,25 +1,10 @@
-from functools import cache
-import sys, subprocess, os, json, shutil
+import json, shutil
 from pathlib import Path
 from tqdm import tqdm
 
 class TsFileNotFound(FileNotFoundError): ...
 class InvalidTsFormat(RuntimeError): ...
-class ProgramNotFound(RuntimeError): ...
 class EncodingError(RuntimeError): ...
-
-@cache
-def CheckExtenralCommand(command):
-    if sys.platform == 'win32':
-        pipeObj = subprocess.Popen(f'cmd /c where {command}', stdout=subprocess.PIPE)
-    else:
-        pipeObj = subprocess.Popen(f'which {command}', stdout=subprocess.PIPE, shell=True)
-    pipeObj.wait()
-    path = pipeObj.stdout.read().decode().split('\r\n')[0].strip()
-    if os.path.exists(path):
-        return path
-    else:
-        raise ProgramNotFound(f'{command} not found in $PATH!')
 
 def FormatTimestamp(timestamp):
     seconds = round(timestamp)

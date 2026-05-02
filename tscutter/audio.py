@@ -1,8 +1,8 @@
-import tempfile, argparse, logging
+import shutil, tempfile, argparse, logging
 import logging
 from pathlib import Path
 from .ffmpeg import InputFile
-from .common import FormatTimestamp, CheckExtenralCommand, ProgramNotFound
+from .common import FormatTimestamp
 
 logger = logging.getLogger('tscutter.audio')
 
@@ -17,9 +17,8 @@ def FormatTimestamp(timestamp):
 def DetectSilence(inputFile: InputFile, ss=0, to=999999, min_silence_len=800, silence_thresh=-80, quiet=False):
     from pydub import AudioSegment
     from pydub.silence import detect_silence
-    try:
-        AudioSegment.converter = CheckExtenralCommand('ffmpeg')
-    except ProgramNotFound:
+    AudioSegment.converter = shutil.which('ffmpeg')
+    if AudioSegment.converter is None:
         logger.warn('Cannot find ffmpeg in path!')
     with tempfile.TemporaryDirectory(prefix='logoNet_wav_') as tmpWavFolder:
         tmpWavFolder = Path(tmpWavFolder)
