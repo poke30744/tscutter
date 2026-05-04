@@ -91,7 +91,10 @@ class InputFile:
                     for item in line.split(' '):
                         if item.startswith('time='):
                             timeFields = item.replace('time=', '').split(':')
-                            time = float(timeFields[0]) * 3600 + float(timeFields[1]) * 60  + float(timeFields[2])
+                            try:
+                                time = float(timeFields[0]) * 3600 + float(timeFields[1]) * 60 + float(timeFields[2])
+                            except ValueError:
+                                continue
                             pbar.update(time - pbar.n)
             pbar.update(to - ss - pbar.n)
         pipeObj.wait()
