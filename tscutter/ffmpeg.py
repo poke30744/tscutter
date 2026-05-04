@@ -25,6 +25,10 @@ class InputFile:
         self.ffmpeg = shutil.which('ffmpeg')
         self.ffprobe = shutil.which('ffprobe')
         self.ffmpeg5 = shutil.which('ffmpeg5')
+        if self.ffmpeg is None:
+            raise RuntimeError("ffmpeg not found in PATH — install ffmpeg or add it to PATH")
+        if self.ffprobe is None:
+            raise RuntimeError("ffprobe not found in PATH — install ffmpeg or add it to PATH")
         self.path = Path(path)
         if not self.path.is_file():
             raise TsFileNotFound(f'"{self.path.name}" not found!')
