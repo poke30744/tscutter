@@ -90,17 +90,6 @@ class PtsMap:
             outputPath = outputFolder / ClipToFilename(clip)
             CopyPart(videoPath, outputPath, start, end)
     
-    def ExtractClipsPipe(self, inFile: Path, clips: list[tuple[float]], pipe, quiet=True):
-        totalSize = 0
-        for clip in clips:
-            start, end = self.data[str(clip[0])]['next_start_pos'], self.data[str(clip[1])]['prev_end_pos']
-            totalSize += end - start
-        with tqdm(total=totalSize, unit='B', unit_scale=True, unit_divisor=1024) as pbar:
-            for clip in clips:
-                start, end = self.data[str(clip[0])]['next_start_pos'], self.data[str(clip[1])]['prev_end_pos']
-                CopyPartPipe(inFile, pipe, start, end, pbar=pbar)
-            pipe.close()
-    
     def ExtractClipPipe(self, inFile: Path, clip: tuple[float], pipe, quiet=True):
         for pts in [ float(key) for key in self.data.keys() ]:
             if pts <= clip[0]:
