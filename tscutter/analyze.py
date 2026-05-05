@@ -141,7 +141,7 @@ def AnalyzeVideo(inputFile: InputFile, indexPath=None, outputFolder=None, minSil
         json.dump(ptsMap, f, indent=True)
     return indexPath
 
-@click.group()
+@click.group(context_settings={'help_option_names': ['-h', '--help']})
 @click.option('--quiet', '-q', is_flag=True, help='Suppress non-error output')
 @click.option('--progress', is_flag=True, help='Output PROGRESS JSON lines for pipeline orchestration')
 @click.pass_context
