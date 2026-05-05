@@ -1,6 +1,7 @@
-import argparse, json, sys
+import json, sys
 from pathlib import Path
 import logging
+import click
 from rich.logging import RichHandler
 from ._progress import Progress
 from .audio import DetectSilence
@@ -140,83 +141,98 @@ def AnalyzeVideo(inputFile: InputFile, indexPath=None, outputFolder=None, minSil
         json.dump(ptsMap, f, indent=True)
     return indexPath
 
-def main():
-    parser = argparse.ArgumentParser(description='Python tool to cut TS: split by silence and fine-tune by scene change PTS.')
-    parser.add_argument('--quiet', '-q', action='store_true', help='suppress non-error output')
-    parser.add_argument('--progress', action='store_true', help='output PROGRESS JSON lines for pipeline orchestration')
-    subparsers = parser.add_subparsers(required=True, title='subcommands', dest='command')
-
-    subparser = subparsers.add_parser('analyze', help='generate index file of the given mpegts file')
-    subparser.add_argument('--input', '-i', required=True, help='input mpegts path')
-    subparser.add_argument('--output', '-o', help='output index path (.ptsmap)')
-    subparser.add_argument('--length', '-l', type=int, default=800, help='minimal silence length in ms')
-    subparser.add_argument('--threshold', '-t', type=int, default=-80, help='silence threshold')
-    subparser.add_argument('--shift', '-s', type=float, default=1, help='split position shift in seconds')
-
-    subparser = subparsers.add_parser('probe', help='probe TS file and output VideoInfo JSON to stdout')
-    subparser.add_argument('--input', '-i', required=True, help='input mpegts path')
-
-    subparser = subparsers.add_parser('list-clips', help='list all clips from a ptsmap file')
-    subparser.add_argument('--index', '-x', required=True, help='input index path (.ptsmap)')
-
-    subparser = subparsers.add_parser('select-clips', help='select candidate long clips from a ptsmap file')
-    subparser.add_argument('--index', '-x', required=True, help='input index path (.ptsmap)')
-    subparser.add_argument('--min-length', type=float, default=150, help='minimum clip length in seconds')
-
-    args = parser.parse_args()
-
-    if args.quiet:
-        log_level = logging.WARNING
-    else:
-        log_level = logging.INFO
+@click.group()
+@click.option('--quiet', '-q', is_flag=True, help='Suppress non-error output')
+@click.option('--progress', is_flag=True, help='Output PROGRESS JSON lines for pipeline orchestration')
+@click.pass_context
+def cli(ctx, quiet, progress):
+    """Cut TS files: split by silence and fine-tune by scene-change PTS analysis."""
+    log_level = logging.WARNING if quiet else logging.INFO
     logging.basicConfig(
         level=log_level, format='%(message)s', datefmt='[%X]',
         handlers=[RichHandler(rich_tracebacks=True)])
+    ctx.ensure_object(dict)
+    ctx.obj['progress'] = Progress(use_protocol=progress)
 
-    progress = Progress(use_protocol=args.progress)
 
-    if args.command == 'analyze':
-        AnalyzeVideo(inputFile=InputFile(args.input), indexPath=Path(args.output) if args.output else None, minSilenceLen=args.length, silenceThresh=args.threshold, splitPosShift=args.shift, progress=progress)
-    elif args.command == 'probe':
-        try:
-            info = InputFile(args.input).GetInfo()
-        except TsFileNotFound as e:
-            print(f'TsFileNotFound: "{args.input}" not found!', file=sys.stderr)
-            sys.exit(1)
-        except InvalidTsFormat as e:
-            print(f'InvalidTsFormat: "{args.input}" is invalid!', file=sys.stderr)
-            sys.exit(2)
-        print(json.dumps({
-            'duration': info.duration,
-            'width': info.width,
-            'height': info.height,
-            'fps': info.fps,
-            'sar': list(info.sar),
-            'dar': list(info.dar),
-            'soundTracks': info.soundTracks,
-            'serviceId': info.serviceId,
-        }))
-    elif args.command == 'list-clips':
-        try:
-            ptsMap = PtsMap(Path(args.index))
-        except FileNotFoundError:
-            print(f'FileNotFoundError: {args.index}', file=sys.stderr)
-            sys.exit(1)
-        except (json.JSONDecodeError, KeyError):
-            print(f'InvalidIndexFormat: {args.index}', file=sys.stderr)
-            sys.exit(2)
-        print(json.dumps(ptsMap.Clips()))
-    elif args.command == 'select-clips':
-        try:
-            ptsMap = PtsMap(Path(args.index))
-        except FileNotFoundError:
-            print(f'FileNotFoundError: {args.index}', file=sys.stderr)
-            sys.exit(1)
-        except (json.JSONDecodeError, KeyError):
-            print(f'InvalidIndexFormat: {args.index}', file=sys.stderr)
-            sys.exit(2)
-        selectedClips, _ = ptsMap.SelectClips(lengthLimit=args.min_length)
-        print(json.dumps(selectedClips))
+@cli.command()
+@click.option('--input', '-i', required=True, help='Input mpegts path')
+@click.option('--output', '-o', help='Output index path (.ptsmap)')
+@click.option('--length', '-l', type=int, default=800, show_default=True, help='Minimal silence length in ms')
+@click.option('--threshold', '-t', type=int, default=-80, show_default=True, help='Silence threshold in dB')
+@click.option('--shift', '-s', type=float, default=1, show_default=True, help='Split position shift in seconds')
+@click.pass_context
+def analyze(ctx, input, output, length, threshold, shift):
+    """Generate index file (.ptsmap) from mpegts file via silence detection + scene-change SAD."""
+    AnalyzeVideo(
+        inputFile=InputFile(input),
+        indexPath=Path(output) if output else None,
+        minSilenceLen=length,
+        silenceThresh=threshold,
+        splitPosShift=shift,
+        progress=ctx.obj['progress'],
+    )
+
+
+@cli.command()
+@click.option('--input', '-i', required=True, help='Input mpegts path')
+def probe(input):
+    """Probe TS file and output VideoInfo JSON to stdout."""
+    try:
+        info = InputFile(input).GetInfo()
+    except TsFileNotFound:
+        print(f'TsFileNotFound: "{input}" not found!', file=sys.stderr)
+        sys.exit(1)
+    except InvalidTsFormat:
+        print(f'InvalidTsFormat: "{input}" is invalid!', file=sys.stderr)
+        sys.exit(2)
+    print(json.dumps({
+        'duration': info.duration,
+        'width': info.width,
+        'height': info.height,
+        'fps': info.fps,
+        'sar': list(info.sar),
+        'dar': list(info.dar),
+        'soundTracks': info.soundTracks,
+        'serviceId': info.serviceId,
+    }))
+
+
+@cli.command()
+@click.option('--index', '-x', required=True, help='Input index path (.ptsmap)')
+def list_clips(index):
+    """List all clips from a ptsmap file."""
+    try:
+        ptsMap = PtsMap(Path(index))
+    except FileNotFoundError:
+        print(f'FileNotFoundError: {index}', file=sys.stderr)
+        sys.exit(1)
+    except (json.JSONDecodeError, KeyError):
+        print(f'InvalidIndexFormat: {index}', file=sys.stderr)
+        sys.exit(2)
+    print(json.dumps(ptsMap.Clips()))
+
+
+@cli.command()
+@click.option('--index', '-x', required=True, help='Input index path (.ptsmap)')
+@click.option('--min-length', type=float, default=150, show_default=True, help='Minimum clip length in seconds')
+def select_clips(index, min_length):
+    """Select candidate long clips from a ptsmap file."""
+    try:
+        ptsMap = PtsMap(Path(index))
+    except FileNotFoundError:
+        print(f'FileNotFoundError: {index}', file=sys.stderr)
+        sys.exit(1)
+    except (json.JSONDecodeError, KeyError):
+        print(f'InvalidIndexFormat: {index}', file=sys.stderr)
+        sys.exit(2)
+    selectedClips, _ = ptsMap.SelectClips(lengthLimit=min_length)
+    print(json.dumps(selectedClips))
+
+
+def main():
+    cli()
+
 
 if __name__ == "__main__":
     main()
