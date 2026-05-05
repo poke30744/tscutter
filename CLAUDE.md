@@ -37,7 +37,7 @@ tscutter select-clips -x index.ptsmap --min-length 150
 ## Dependencies
 
 - FFmpeg, ffprobe, ffmpeg5 — must be in PATH
-- Python: pydub, tqdm, numpy, Pillow, ffmpeg-python, audioop-lts
+- Python: pydub, rich, numpy, Pillow, ffmpeg-python, audioop-lts
 
 ## Development
 

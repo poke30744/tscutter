@@ -1,7 +1,8 @@
 import argparse, json, sys
 from pathlib import Path
 import logging
-from tqdm import tqdm
+from rich.logging import RichHandler
+from ._progress import Progress
 from .audio import DetectSilence
 from .common import FormatTimestamp, PtsMap, TsFileNotFound, InvalidTsFormat
 from .ffmpeg import InputFile
@@ -20,9 +21,8 @@ def MergeIntervals(intervals):
             result.append(interval)
     return result
 
-def FindSplitPosition(inputFile: InputFile, ss, to, splitPosShift=1):
-    # We assume scene change occurs between [ {interval start} - 1 sec, {internval end} + 1 sec ]
-    propList = inputFile.ExtractFrameProps(((ss-splitPosShift) if (ss-splitPosShift) > 0 else 0), to+splitPosShift)
+def FindSplitPosition(inputFile: InputFile, ss, to, splitPosShift=1, progress=None):
+    propList = inputFile.ExtractFrameProps(((ss-splitPosShift) if (ss-splitPosShift) > 0 else 0), to+splitPosShift, progress=progress)
     if not propList:
         return None, None, None # ffmpeg error
     
@@ -51,12 +51,16 @@ def FindSplitPosition(inputFile: InputFile, ss, to, splitPosShift=1):
         nextStart = sceneChange
     return prevEnd, sceneChange, nextStart
 
-def LookingForCutLocations(inputFile: InputFile, intervals, splitPosShift, quiet=True):
+def LookingForCutLocations(inputFile: InputFile, intervals, splitPosShift, progress: Progress):
     locations = []
-    for interval in tqdm(intervals, desc='Looking for cut position'):
-        prevEnd, sceneChange, nextStart = FindSplitPosition(inputFile, interval[0] / 1000, interval[1] / 1000, splitPosShift)
+    tid = "cut_position"
+    progress.add_task(tid, len(intervals), "Finding cut positions")
+    for i, interval in enumerate(intervals):
+        prevEnd, sceneChange, nextStart = FindSplitPosition(inputFile, interval[0] / 1000, interval[1] / 1000, splitPosShift, progress=progress)
         if prevEnd is not None and sceneChange is not None and nextStart is not None:
             locations.append([prevEnd, sceneChange, nextStart])
+        progress.update(tid, i + 1)
+    progress.done(tid)
     return locations
 
 def GeneratePtsMap(inputFile: InputFile, cutLocations):
@@ -116,7 +120,9 @@ def GeneratePtsMap(inputFile: InputFile, cutLocations):
 
     return ptsmapDedup
 
-def AnalyzeVideo(inputFile: InputFile, indexPath=None, outputFolder=None, minSilenceLen=800, silenceThresh=-80, splitPosShift=1, quiet=False):
+def AnalyzeVideo(inputFile: InputFile, indexPath=None, outputFolder=None, minSilenceLen=800, silenceThresh=-80, splitPosShift=1, progress: Progress | None = None):
+    if progress is None:
+        progress = Progress()
     if indexPath is None:
         if outputFolder is None:
             outputFolder = inputFile.path.parent
@@ -125,13 +131,10 @@ def AnalyzeVideo(inputFile: InputFile, indexPath=None, outputFolder=None, minSil
         indexPath = outputFolder / '_metadata' / (inputFile.path.stem + '.ptsmap')
     indexPath.parent.mkdir(parents=True, exist_ok=True)
 
-    separatorIntervals = DetectSilence(inputFile=inputFile, min_silence_len=minSilenceLen, silence_thresh=silenceThresh, quiet=quiet)
+    separatorIntervals = DetectSilence(inputFile=inputFile, min_silence_len=minSilenceLen, silence_thresh=silenceThresh, progress=progress)
     mergedIntervals = MergeIntervals(separatorIntervals)
-    logger.info(f'len(mergedIntervals): {len(mergedIntervals)}')
-    cutLocations = LookingForCutLocations(inputFile=inputFile, intervals=mergedIntervals, splitPosShift=splitPosShift, quiet=quiet)
-    logger.info(f'len(cutLocations): {len(cutLocations)}')
+    cutLocations = LookingForCutLocations(inputFile=inputFile, intervals=mergedIntervals, splitPosShift=splitPosShift, progress=progress)
     ptsMap = GeneratePtsMap(inputFile=inputFile, cutLocations=cutLocations)
-    logger.info(f'len(ptsMap): {len(ptsMap)}')
 
     with indexPath.open('w') as f:
         json.dump(ptsMap, f, indent=True)
@@ -139,7 +142,8 @@ def AnalyzeVideo(inputFile: InputFile, indexPath=None, outputFolder=None, minSil
 
 def main():
     parser = argparse.ArgumentParser(description='Python tool to cut TS: split by silence and fine-tune by scene change PTS.')
-    parser.add_argument('--quiet', '-q', action='store_true', help="don't output to the console")
+    parser.add_argument('--quiet', '-q', action='store_true', help='suppress non-error output')
+    parser.add_argument('--progress', action='store_true', help='output PROGRESS JSON lines for pipeline orchestration')
     subparsers = parser.add_subparsers(required=True, title='subcommands', dest='command')
 
     subparser = subparsers.add_parser('analyze', help='generate index file of the given mpegts file')
@@ -161,10 +165,18 @@ def main():
 
     args = parser.parse_args()
 
-    logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    if args.quiet:
+        log_level = logging.WARNING
+    else:
+        log_level = logging.INFO
+    logging.basicConfig(
+        level=log_level, format='%(message)s', datefmt='[%X]',
+        handlers=[RichHandler(rich_tracebacks=True)])
+
+    progress = Progress(use_protocol=args.progress)
 
     if args.command == 'analyze':
-        AnalyzeVideo(inputFile=InputFile(args.input), indexPath=Path(args.output) if args.output else None, minSilenceLen=args.length, silenceThresh=args.threshold, splitPosShift=args.shift, quiet=args.quiet)
+        AnalyzeVideo(inputFile=InputFile(args.input), indexPath=Path(args.output) if args.output else None, minSilenceLen=args.length, silenceThresh=args.threshold, splitPosShift=args.shift, progress=progress)
     elif args.command == 'probe':
         try:
             info = InputFile(args.input).GetInfo()

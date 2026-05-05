@@ -3,7 +3,7 @@ import json
 import shutil, subprocess, tempfile
 from pathlib import Path
 from dataclasses import dataclass
-from tqdm import tqdm
+from ._progress import Progress
 import numpy as np
 from PIL import Image
 import ffmpeg
@@ -55,7 +55,7 @@ class InputFile:
         )
         return videoInfo
 
-    def ExtractStream(self, output=None, ss=0, to=999999, videoTracks=None, audioTracks=None, toWav=False, quiet=False):
+    def ExtractStream(self, output=None, ss=0, to=999999, videoTracks=None, audioTracks=None, toWav=False, progress: Progress | None = None):
         output = self.path.with_suffix('') if output is None else Path(output)
         if output.is_dir():
             shutil.rmtree(output)
@@ -65,7 +65,7 @@ class InputFile:
                 self.ffmpeg, '-hide_banner', '-y',
                 '-ss', str(ss), '-to', str(to), '-i', str(self.path),
                 ]
-        
+
         # copy video tracks
         if videoTracks is None:
             videoTracks = [ 0 ]
@@ -88,22 +88,29 @@ class InputFile:
 
         pipeObj = subprocess.Popen(args, stderr=subprocess.PIPE, universal_newlines='\r', errors='ignore')
         to = min(to, info.duration)
-        with tqdm(total=to - ss, unit='secs') as pbar:
-            pbar.set_description('Extracting streams')
-            for line in pipeObj.stderr:
-                if 'time=' in line:
-                    for item in line.split(' '):
-                        if item.startswith('time='):
-                            timeFields = item.replace('time=', '').split(':')
-                            try:
-                                time = float(timeFields[0]) * 3600 + float(timeFields[1]) * 60 + float(timeFields[2])
-                            except ValueError:
-                                continue
-                            pbar.update(time - pbar.n)
-            pbar.update(to - ss - pbar.n)
+        total = to - ss
+        tid = "extract_streams"
+        if progress is not None:
+            progress.add_task(tid, total, "Extracting streams", unit="s")
+        last_time = 0.0
+        for line in pipeObj.stderr:
+            if 'time=' in line:
+                for item in line.split(' '):
+                    if item.startswith('time='):
+                        timeFields = item.replace('time=', '').split(':')
+                        try:
+                            time = float(timeFields[0]) * 3600 + float(timeFields[1]) * 60 + float(timeFields[2])
+                        except ValueError:
+                            continue
+                        if progress is not None:
+                            progress.update(tid, time)
+                        last_time = time
+        if progress is not None:
+            progress.update(tid, total)
+            progress.done(tid)
         pipeObj.wait()
 
-    def ExtractFrameProps(self, ss, to, nosad=False):
+    def ExtractFrameProps(self, ss, to, nosad=False, progress=None):
         with tempfile.TemporaryDirectory(prefix='logoNet_frames_') as tmpLogoFolder:
             args = [
                 self.ffmpeg5, '-hide_banner',
@@ -123,32 +130,39 @@ class InputFile:
             with subprocess.Popen(args, stderr=subprocess.PIPE, universal_newlines='\r', errors='ignore') as pipeObj:
                 propList = []
                 to = min(to, self.GetInfo().duration)
-                with tqdm(total=to - ss, unit='secs') as pbar:
-                    pbar.set_description('Extracting props')
-                    for line in pipeObj.stderr:
-                        if 'pts_time:' in line:
-                            ptsTime = float(line.split('pts_time:')[1].lstrip().split(' ')[0])
-                            pos = int(line.split('pos:')[1].lstrip().split(' ')[0])
-                            checksum = line.split('checksum:')[1].split(' ')[0]
-                            planeChecksum = line.split('plane_checksum:')[1].split('[')[1].split(']')[0].split(' ')
-                            meanStrList = line.split('mean:')[1].split('\x08')[0].split(']')[0].lstrip('[').split()
-                            stdevStrList = line.split('stdev:')[1].split('\x08')[0].split(']')[0].lstrip('[').split()
-                            mean = [ float(i) for i in meanStrList ]
-                            stdev = [ float(i) for i in stdevStrList ]
-                            isKey = int(line.split(' iskey:')[1].split(' ')[0])
-                            frameType = line.split(' type:')[1].split(' ')[0]
-                            propList.append({
-                                'ptsTime': ptsTime + ss,
-                                'pos': pos,
-                                'checksum': checksum,
-                                'plane_checksum': planeChecksum,
-                                'mean': mean,
-                                'stdev': stdev,
-                                'isKey': isKey,
-                                'type': frameType,
-                            })
-                            pbar.update(ptsTime - pbar.n)
-                    pbar.update(to - ss - pbar.n)
+                total = to - ss
+                tid = "extract_props"
+                if progress is not None:
+                    progress.add_task(tid, total, "Extracting frame props", unit="s")
+                last_pts = 0.0
+                for line in pipeObj.stderr:
+                    if 'pts_time:' in line:
+                        ptsTime = float(line.split('pts_time:')[1].lstrip().split(' ')[0])
+                        pos = int(line.split('pos:')[1].lstrip().split(' ')[0])
+                        checksum = line.split('checksum:')[1].split(' ')[0]
+                        planeChecksum = line.split('plane_checksum:')[1].split('[')[1].split(']')[0].split(' ')
+                        meanStrList = line.split('mean:')[1].split('\x08')[0].split(']')[0].lstrip('[').split()
+                        stdevStrList = line.split('stdev:')[1].split('\x08')[0].split(']')[0].lstrip('[').split()
+                        mean = [ float(i) for i in meanStrList ]
+                        stdev = [ float(i) for i in stdevStrList ]
+                        isKey = int(line.split(' iskey:')[1].split(' ')[0])
+                        frameType = line.split(' type:')[1].split(' ')[0]
+                        propList.append({
+                            'ptsTime': ptsTime + ss,
+                            'pos': pos,
+                            'checksum': checksum,
+                            'plane_checksum': planeChecksum,
+                            'mean': mean,
+                            'stdev': stdev,
+                            'isKey': isKey,
+                            'type': frameType,
+                        })
+                        last_pts = ptsTime
+                        if progress is not None:
+                            progress.update(tid, ptsTime)
+                if progress is not None:
+                    progress.update(tid, total)
+                    progress.done(tid)
             if not nosad:
                 pathList = sorted(list(Path(tmpLogoFolder).glob('*.bmp')))
                 # The clip is corrputed if we cannot extract any image

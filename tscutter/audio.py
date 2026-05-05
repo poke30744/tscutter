@@ -14,22 +14,20 @@ def FormatTimestamp(timestamp):
     seconds = timestamp % 60 
     return f'{hour:02}:{minutes:02}:{seconds:05.02f}'
 
-def DetectSilence(inputFile: InputFile, ss=0, to=999999, min_silence_len=800, silence_thresh=-80, quiet=False):
+def DetectSilence(inputFile: InputFile, ss=0, to=999999, min_silence_len=800, silence_thresh=-80, progress=None):
     from pydub import AudioSegment
     from pydub.silence import detect_silence
     AudioSegment.converter = shutil.which('ffmpeg')
     if AudioSegment.converter is None:
-        logger.warn('Cannot find ffmpeg in path!')
+        logger.warning('Cannot find ffmpeg in path!')
     with tempfile.TemporaryDirectory(prefix='logoNet_wav_') as tmpWavFolder:
         tmpWavFolder = Path(tmpWavFolder)
-        inputFile.ExtractStream(output=tmpWavFolder, ss=ss, to=to, toWav=True, videoTracks=[], audioTracks=[0], quiet=quiet)
+        inputFile.ExtractStream(output=tmpWavFolder, ss=ss, to=to, toWav=True, videoTracks=[], audioTracks=[0], progress=progress)
         audioFilename = tmpWavFolder / 'audio_0.wav'
         sound = AudioSegment.from_file(audioFilename, channels=1)
-        if not quiet:
-            logger.info(f'Detect silence (min_silence_len: {min_silence_len},  silence_thresh: {silence_thresh})...')
+        logger.info(f'Detect silence (min_silence_len: {min_silence_len},  silence_thresh: {silence_thresh})')
         periods = detect_silence(audio_segment=sound, min_silence_len=min_silence_len, silence_thresh=silence_thresh, seek_step=10)
-        if not quiet:
-            logger.info('done!')
+        logger.info('Silence detection done')
         return periods
 
 if __name__ == "__main__":

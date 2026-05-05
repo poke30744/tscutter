@@ -1,6 +1,5 @@
 import json, shutil
 from pathlib import Path
-from tqdm import tqdm
 
 class TsFileNotFound(FileNotFoundError): ...
 class InvalidTsFormat(RuntimeError): ...
@@ -78,26 +77,37 @@ class PtsMap:
             selectedLen += clipLen
         return selectedClips, selectedLen
     
-    def SplitVideo(self, videoPath: Path, outputFolder: Path, quiet=False):
+    def SplitVideo(self, videoPath: Path, outputFolder: Path, progress=None):
         if outputFolder.exists():
             shutil.rmtree(outputFolder)
         outputFolder.mkdir(parents=True)
 
         ptsList = list(self.data.keys())
         clips = [ (ptsList[i], ptsList[i + 1]) for i in range(len(ptsList) - 1) ]
-        for clip in tqdm(clips, desc='splitting files'):
-            start, end = self.data[clip[0]]['next_start_pos'], self.data[clip[1]]['prev_end_pos']
+        total_bytes = sum(self.data[c[1]]['prev_end_pos'] - self.data[c[0]]['next_start_pos']
+                          for c in clips)
+        if progress is not None:
+            progress.add_task("split_files", total_bytes, "Splitting files", unit="B")
+        copied = 0
+        for clip in clips:
+            start = self.data[clip[0]]['next_start_pos']
+            end = self.data[clip[1]]['prev_end_pos']
             outputPath = outputFolder / ClipToFilename(clip)
             CopyPart(videoPath, outputPath, start, end)
+            copied += end - start
+            if progress is not None:
+                progress.update("split_files", copied)
+        if progress is not None:
+            progress.done("split_files")
     
-    def ExtractClipPipe(self, inFile: Path, clip: tuple[float], pipe, quiet=True):
+    def ExtractClipPipe(self, inFile: Path, clip: tuple[float], pipe, progress=None):
         for pts in [ float(key) for key in self.data.keys() ]:
             if pts <= clip[0]:
                 ptsStart = pts
             if pts >= clip[1]:
                 ptsEnd = pts
                 break
-    
+
         ptsStartPos =  self.data[str(ptsStart)]['next_start_pos']
         ptsEndPos =  self.data[str(ptsEnd)]['prev_end_pos']
 
@@ -107,6 +117,25 @@ class PtsMap:
         totalSize = round((clip[1] - clip[0]) * ratio)
         end = start + totalSize
 
-        with tqdm(total=totalSize, unit='B', unit_scale=True, unit_divisor=1024) as pbar:
-            CopyPartPipe(inFile, pipe, start, end, pbar=pbar)
-            pipe.close()
+        tid = "extract_clip_bytes"
+        if progress is not None:
+            progress.add_task(tid, totalSize, "Copying", unit="B")
+        copied = 0
+        bufsize = 1024 * 1024
+        try:
+            with open(inFile, 'rb') as f1:
+                f1.seek(start)
+                length = end - start
+                while length:
+                    chunk = min(bufsize, length)
+                    data = f1.read(chunk)
+                    pipe.write(data)
+                    length -= chunk
+                    copied += chunk
+                    if progress is not None:
+                        progress.update(tid, copied)
+        except ValueError:
+            pass
+        pipe.close()
+        if progress is not None:
+            progress.done(tid)
