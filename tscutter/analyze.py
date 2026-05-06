@@ -6,6 +6,7 @@ from rich.logging import RichHandler
 from ._progress import Progress
 from .audio import DetectSilence
 from .common import FormatTimestamp, PtsMap, TsFileNotFound, InvalidTsFormat
+from . import __version__
 from .ffmpeg import InputFile
 
 logger = logging.getLogger('tscutter.analyze')
@@ -144,6 +145,7 @@ def AnalyzeVideo(inputFile: InputFile, indexPath=None, outputFolder=None, minSil
 @click.group(context_settings={'help_option_names': ['-h', '--help']})
 @click.option('--quiet', '-q', is_flag=True, help='Suppress non-error output')
 @click.option('--progress', is_flag=True, help='Output PROGRESS JSON lines for pipeline orchestration')
+@click.version_option(__version__, prog_name='tscutter', message='%(prog)s %(version)s')
 @click.pass_context
 def cli(ctx, quiet, progress):
     """Cut TS files: split by silence and fine-tune by scene-change PTS analysis."""

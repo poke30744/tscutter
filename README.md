@@ -5,7 +5,7 @@ Analyze and split MPEG2-TS video files. Detects silence gaps, finds scene change
 ## CLI Commands
 
 ```
-tscutter [--quiet] [--progress] COMMAND [ARGS]...
+tscutter [--quiet] [--progress] [--version] COMMAND [ARGS]...
 ```
 
 | Command | Description | Input | Output |

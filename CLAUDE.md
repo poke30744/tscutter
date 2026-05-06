@@ -12,7 +12,7 @@ Python package for analyzing MPEG2‑TS video files. Detects silence gaps, locat
 ## Commands
 
 ```bash
-tscutter [--quiet] [--progress] COMMAND [ARGS]...
+tscutter [--quiet] [--progress] [--version] COMMAND [ARGS]...
 
 # Generate a ptsmap
 tscutter analyze -i video.ts -o index.ptsmap -l 800 -t -80 -s 1
