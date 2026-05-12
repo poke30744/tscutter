@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-Python package for analyzing MPEG2‑TS video files. Detects silence gaps, locates scene‑change frames using sum‑of‑absolute‑differences, and builds a `.ptsmap` index. Used by tstriage and tsmarker as a CLI tool.
+Python package for analyzing MPEG2‑TS video files. Detects silence gaps, locates scene‑change frames using histogram chi-squared distance, and builds a `.ptsmap` index. Used by tstriage and tsmarker as a CLI tool.
 
 - Entry point: `tscutter.analyze:main`, console script `tscutter`
 - Requires Python ≥3.13
@@ -16,6 +16,9 @@ tscutter [--quiet] [--progress] [--version] COMMAND [ARGS]...
 
 # Generate a ptsmap
 tscutter analyze -i video.ts -o index.ptsmap -l 800 -t -80 -s 1
+
+# Split TS into clips by ptsmap
+tscutter split -i video.ts -x index.ptsmap -o clips/
 
 # Probe video info (JSON to stdout)
 tscutter probe -i video.ts
@@ -31,12 +34,18 @@ tscutter select-clips -x index.ptsmap --min-length 150
 
 - `tscutter.analyze` — CLI entry point and main orchestration: silence detection, scene‑change location, PTS map generation
 - `tscutter.audio` — silence detection using pydub/ffmpeg
-- `tscutter.ffmpeg` — `InputFile` class wraps ffmpeg/ffprobe subprocess calls; uses `ffmpeg-python` for probe
-- `tscutter.common` — `PtsMap` class for reading `.ptsmap` files; `SplitVideo` (used by tsmarker's `MarkerMap.Cut`); `CopyPart`/`CopyPartPipe` utilities; exception classes
+- `tscutter.ffmpeg` — `InputFile` class wraps ffmpeg/ffprobe subprocess calls; uses `ffmpeg-python` for probe. Key methods: `GetInfo`, `ExtractStream`, `ExtractFrameDiffs` (histogram-based scene change detection), `ExtractMeanImage`
+- `tscutter.common` — `PtsMap` class for reading `.ptsmap` files and splitting via `SplitVideo`; exception classes
+
+## Key Design Decisions
+
+- **Histogram scene-change detection**: `FindSplitPosition` uses 64-bin grayscale histogram chi-squared distance to locate scene changes, replacing the old SAD-based approach. This is codec-agnostic (works on both mpeg2video and h264) and does not depend on I-frame positions.
+- **WAV extraction without aresample**: `ExtractStream` converts audio to WAV without the `aresample=async=1` filter, which was found to distort MKV raw AAC timing by ~0.9s compared to TS ADTS AAC.
+- **PTS-only**: The refactor removed all POS (byte-position) fields from `PtsMap`. Splitting and extraction use ffmpeg `-ss/-to` instead of byte-range reads.
 
 ## Dependencies
 
-- FFmpeg, ffprobe, ffmpeg5 — must be in PATH
+- FFmpeg, ffprobe — must be in PATH
 - Python: pydub, rich, numpy, Pillow, ffmpeg-python, audioop-lts
 
 ## Development

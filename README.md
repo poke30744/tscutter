@@ -27,5 +27,5 @@ tscutter select-clips -x index.ptsmap --min-length 150
 ## Dependencies
 
 - Python ≥3.13
-- ffmpeg, ffprobe, ffmpeg5
+- ffmpeg, ffprobe
 - pydub, numpy, Pillow, ffmpeg-python, tqdm, audioop-lts

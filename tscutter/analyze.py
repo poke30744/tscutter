@@ -24,33 +24,25 @@ def MergeIntervals(intervals):
     return result
 
 def FindSplitPosition(inputFile: InputFile, ss, to, splitPosShift=1, progress=None):
-    propList = inputFile.ExtractFrameProps(((ss-splitPosShift) if (ss-splitPosShift) > 0 else 0), to+splitPosShift, progress=progress)
-    if not propList:
-        return None, None, None # ffmpeg error
-    
-    # sceneChange should be found between [ {interval start}, {internval end} ]
-    sceneChange = None
-    for prop in propList:
-        if ss <= prop['ptsTime'] <= to:
-            if sceneChange is None:
-                sceneChange = prop
-            elif prop['sad'] > sceneChange['sad']:
-                sceneChange = prop
-    if sceneChange is None:
-        return None, None, None # ffmpeg error
+    diffs = inputFile.ExtractFrameDiffs(
+        ((ss - splitPosShift) if (ss - splitPosShift) > 0 else 0),
+        to + splitPosShift,
+        fps='2/1')
+    if not diffs:
+        return None, None, None
 
-    iFramesProps = [ prop for prop in propList if prop['type'] == 'I' ]
-    prevEnd, nextStart = None, None
-    for prop in iFramesProps:
-        if prop['ptsTime'] < sceneChange['ptsTime']:
-            prevEnd = prop
-        elif prop['ptsTime'] > sceneChange['ptsTime']:
-            nextStart = prop
-            break
-    if prevEnd is None:
-        prevEnd = sceneChange
-    if nextStart is None:
-        nextStart = sceneChange
+    best_diff, best = -1, None
+    for d in diffs:
+        if ss <= d['ptsTime'] <= to and d['histDiff'] > best_diff:
+            best_diff = d['histDiff']
+            best = d
+
+    if best is None:
+        return None, None, None
+
+    prevEnd = {'ptsTime': best['ptsTime'], 'sad': 0.0}
+    sceneChange = {'ptsTime': best['ptsTime'] + 0.5, 'sad': best_diff}
+    nextStart = {'ptsTime': best['ptsTime'] + 1.0, 'sad': 0.0}
     return prevEnd, sceneChange, nextStart
 
 def LookingForCutLocations(inputFile: InputFile, intervals, splitPosShift, progress: Progress):
@@ -67,7 +59,6 @@ def LookingForCutLocations(inputFile: InputFile, intervals, splitPosShift, progr
 
 def GeneratePtsMap(inputFile: InputFile, cutLocations):
     duration = inputFile.GetInfo().duration
-    fileSize = inputFile.path.stat().st_size
     ptsmap = {
         0.0: {
             'pts_display': FormatTimestamp(0.0),
@@ -76,10 +67,8 @@ def GeneratePtsMap(inputFile: InputFile, cutLocations):
             'silent_to': 0.0,
             'prev_end_pts': 0.0,
             'prev_end_sad': 0.0,
-            'prev_end_pos': 0,
             'next_start_pts': 0.0,
             'next_start_sad': 0.0,
-            'next_start_pos': 0,
         }
     }
     for prevEnd, sceneChange, nextStart in cutLocations:
@@ -89,10 +78,8 @@ def GeneratePtsMap(inputFile: InputFile, cutLocations):
             'sad': sceneChange['sad'],
             'prev_end_pts': prevEnd['ptsTime'],
             'prev_end_sad': prevEnd['sad'],
-            'prev_end_pos': prevEnd['pos'],
             'next_start_pts': nextStart['ptsTime'],
             'next_start_sad': nextStart['sad'],
-            'next_start_pos': nextStart['pos'],
         }
     ptsmap[duration] = {
         'pts_display': FormatTimestamp(duration),
@@ -101,22 +88,20 @@ def GeneratePtsMap(inputFile: InputFile, cutLocations):
         'silent_to': duration,
         'prev_end_pts': duration,
         'prev_end_sad': 0.0,
-        'prev_end_pos': fileSize,
         'next_start_pts': duration,
         'next_start_sad': duration,
-        'next_start_pos': fileSize,
     }
 
     # to remove dublications
     ptsDedup = { round(pts): pts for pts in ptsmap }
     ptsmapDedup = { pts: ptsmap[pts] for pts in sorted(list(ptsDedup.values())) }
 
-    # to remove corrupted items (previous "next_start_pos" >= "next prev_end_pos")
+    # to remove corrupted items (previous "next_start_pts" >= "next prev_end_pts")
     ptsKeys = list(ptsmapDedup.keys())
     ptsGoodKeys = [ ptsKeys[0] ]
     for nextKey in ptsKeys[1:]:
         prevKey = ptsGoodKeys[-1]
-        if ptsmapDedup[prevKey]['next_start_pos'] < ptsmapDedup[nextKey]['prev_end_pos']:
+        if ptsmapDedup[prevKey]['next_start_pts'] < ptsmapDedup[nextKey]['prev_end_pts']:
             ptsGoodKeys.append(nextKey)
     ptsmapDedup = { key: ptsmapDedup[key] for key in sorted(ptsGoodKeys) }
 
@@ -148,11 +133,11 @@ def AnalyzeVideo(inputFile: InputFile, indexPath=None, outputFolder=None, minSil
 @click.version_option(__version__, prog_name='tscutter', message='%(prog)s %(version)s')
 @click.pass_context
 def cli(ctx, quiet, progress):
-    """Cut TS files: split by silence and fine-tune by scene-change PTS analysis."""
+    """Analyze and split TS files by silence detection and scene-change PTS analysis."""
     log_level = logging.WARNING if quiet else logging.INFO
     logging.basicConfig(
         level=log_level, format='%(message)s', datefmt='[%X]',
-        handlers=[RichHandler(rich_tracebacks=True)])
+        handlers=[RichHandler(rich_tracebacks=sys.stderr.isatty())])
     ctx.ensure_object(dict)
     ctx.obj['progress'] = Progress(use_protocol=progress)
 
@@ -230,6 +215,24 @@ def select_clips(index, min_length):
         sys.exit(2)
     selectedClips, _ = ptsMap.SelectClips(lengthLimit=min_length)
     print(json.dumps(selectedClips))
+
+
+@cli.command()
+@click.option('--input', '-i', required=True, help='Input mpegts path')
+@click.option('--index', '-x', required=True, help='Input .ptsmap path')
+@click.option('--output', '-o', required=True, help='Output folder path')
+@click.pass_context
+def split(ctx, input, index, output):
+    """Split TS file into clips by .ptsmap cut points."""
+    try:
+        ptsMap = PtsMap(Path(index))
+    except FileNotFoundError:
+        print(f'FileNotFoundError: {index}', file=sys.stderr)
+        sys.exit(1)
+    except (json.JSONDecodeError, KeyError):
+        print(f'InvalidIndexFormat: {index}', file=sys.stderr)
+        sys.exit(2)
+    ptsMap.SplitVideo(Path(input), Path(output), progress=ctx.obj['progress'])
 
 
 def main():

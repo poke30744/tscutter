@@ -1,4 +1,4 @@
-import json, shutil
+import json, shutil, subprocess
 from pathlib import Path
 
 class TsFileNotFound(FileNotFoundError): ...
@@ -16,35 +16,6 @@ def FormatTimestamp(timestamp):
 def ClipToFilename(clip):
     return '{:08.3f}-{:08.3f}.ts'.format(float(clip[0]), float(clip[1]))
 
-def CopyPart(src, dest, start, end, mode='wb', pbar=None, bufsize=1024*1024):
-    with open(src, 'rb') as f1:
-        f1.seek(start)
-        with open(dest, mode) as f2:
-            length = end - start
-            while length:
-                chunk = min(bufsize, length)
-                data = f1.read(chunk)
-                f2.write(data)
-                length -= chunk
-                if pbar is not None:
-                    pbar.update(chunk)
-
-def CopyPartPipe(src, pipe, start, end,  pbar=None, bufsize=1024*1024):
-    try:
-        with open(src, 'rb') as f1:
-            f1.seek(start)
-            length = end - start
-            while length:
-                chunk = min(bufsize, length)
-                data = f1.read(chunk)
-                pipe.write(data)
-                length -= chunk
-                if pbar is not None:
-                    pbar.update(chunk)
-    except ValueError:
-        # pipe is closed by the other side
-        pass
-
 class PtsMap:
     def __init__(self, path: Path) -> None:
         self.path = path
@@ -58,10 +29,6 @@ class PtsMap:
         ptsEnd = list(self.data.keys())[-1]
         return self.data[ptsEnd]['prev_end_pts']
     
-    def Length(self) -> int:
-        ptsEnd = list(self.data.keys())[-1]
-        return self.data[ptsEnd]['prev_end_pos']
-
     def SelectClips(self, lengthLimit=150) -> tuple:
         clips = self.Clips()
         videoLen = clips[-1][1]
@@ -83,59 +50,26 @@ class PtsMap:
         outputFolder.mkdir(parents=True)
 
         ptsList = list(self.data.keys())
-        clips = [ (ptsList[i], ptsList[i + 1]) for i in range(len(ptsList) - 1) ]
-        total_bytes = sum(self.data[c[1]]['prev_end_pos'] - self.data[c[0]]['next_start_pos']
-                          for c in clips)
+        clips = [(ptsList[i], ptsList[i + 1]) for i in range(len(ptsList) - 1)]
+        total_duration = sum(
+            self.data[c[1]]['prev_end_pts'] - self.data[c[0]]['next_start_pts']
+            for c in clips)
         if progress is not None:
-            progress.add_task("split_files", total_bytes, "Splitting files", unit="B")
-        copied = 0
+            progress.add_task("split_files", total_duration, "Splitting files", unit="s")
+        copied = 0.0
         for clip in clips:
-            start = self.data[clip[0]]['next_start_pos']
-            end = self.data[clip[1]]['prev_end_pos']
+            ss = self.data[clip[0]]['next_start_pts']
+            to = self.data[clip[1]]['prev_end_pts']
             outputPath = outputFolder / ClipToFilename(clip)
-            CopyPart(videoPath, outputPath, start, end)
-            copied += end - start
+            subprocess.run([
+                'ffmpeg', '-hide_banner', '-y',
+                '-ss', str(ss), '-to', str(to), '-i', str(videoPath),
+                '-c', 'copy', '-map', '0', '-ignore_unknown', '-copy_unknown',
+                str(outputPath)
+            ], check=True, capture_output=True)
+            copied += to - ss
             if progress is not None:
                 progress.update("split_files", copied)
         if progress is not None:
             progress.done("split_files")
     
-    def ExtractClipPipe(self, inFile: Path, clip: tuple[float], pipe, progress=None):
-        for pts in [ float(key) for key in self.data.keys() ]:
-            if pts <= clip[0]:
-                ptsStart = pts
-            if pts >= clip[1]:
-                ptsEnd = pts
-                break
-
-        ptsStartPos =  self.data[str(ptsStart)]['next_start_pos']
-        ptsEndPos =  self.data[str(ptsEnd)]['prev_end_pos']
-
-        ratio = (ptsEndPos - ptsStartPos) / (ptsEnd - ptsStart)
-
-        start = round(ptsStartPos + (clip[0] - ptsStart) * ratio) // 188 * 188
-        totalSize = round((clip[1] - clip[0]) * ratio)
-        end = start + totalSize
-
-        tid = "extract_clip_bytes"
-        if progress is not None:
-            progress.add_task(tid, totalSize, "Copying", unit="B")
-        copied = 0
-        bufsize = 1024 * 1024
-        try:
-            with open(inFile, 'rb') as f1:
-                f1.seek(start)
-                length = end - start
-                while length:
-                    chunk = min(bufsize, length)
-                    data = f1.read(chunk)
-                    pipe.write(data)
-                    length -= chunk
-                    copied += chunk
-                    if progress is not None:
-                        progress.update(tid, copied)
-        except ValueError:
-            pass
-        pipe.close()
-        if progress is not None:
-            progress.done(tid)

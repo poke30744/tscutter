@@ -9,6 +9,13 @@ from PIL import Image
 import ffmpeg
 from .common import TsFileNotFound, InvalidTsFormat
 
+def _is_float(s: str) -> bool:
+    try:
+        float(s)
+        return True
+    except ValueError:
+        return False
+
 @dataclass
 class VideoInfo:
     duration: float 
@@ -24,7 +31,6 @@ class InputFile:
     def __init__(self, path) -> None:
         self.ffmpeg = shutil.which('ffmpeg')
         self.ffprobe = shutil.which('ffprobe')
-        self.ffmpeg5 = shutil.which('ffmpeg5')
         if self.ffmpeg is None:
             raise RuntimeError("ffmpeg not found in PATH — install ffmpeg or add it to PATH")
         if self.ffprobe is None:
@@ -43,15 +49,21 @@ class InputFile:
         video_stream = next(s for s in probeInfo['streams'] if s.get('codec_type') == 'video')
         audio_streams = [s for s in probeInfo['streams'] if s.get('codec_type') == 'audio']
 
+        # Duration: stream level (TS) or format level (MKV)
+        duration = float(video_stream.get('duration') or probeInfo['format']['duration'])
+        # MKV has no programs; fall back to 0
+        programs = probeInfo.get('programs', [])
+        serviceId = next((p['program_id'] for p in programs if p['nb_streams'] > 0), 0)
+
         videoInfo = VideoInfo(
-            duration = float(video_stream['duration']),
+            duration = duration,
             width = video_stream['width'],
             height = video_stream['height'],
             fps = eval(video_stream['avg_frame_rate']),
             sar = video_stream['sample_aspect_ratio'].split(':'),
             dar = video_stream['display_aspect_ratio'].split(':'),
             soundTracks = len(audio_streams),
-            serviceId = next(p['program_id'] for p in probeInfo['programs'] if p['nb_streams'] > 0),
+            serviceId = serviceId,
         )
         return videoInfo
 
@@ -80,8 +92,7 @@ class InputFile:
         for i in audioTracks:
             args += [ '-map', f'0:a:{i}' ]
             if toWav:
-                # to sync corrputed sound tracks with the actual video length
-                args += [ '-af',  'aresample=async=1', '-f', 'wav' ]
+                args += [ '-f', 'wav' ]
             else:
                 args += [ '-c:a', 'copy' ]
             args += [ output / f'audio_{i}.{extName}' ]
@@ -110,10 +121,46 @@ class InputFile:
             progress.done(tid)
         pipeObj.wait()
 
+    def ExtractFrameDiffs(self, ss, to, fps='2/1') -> list[dict]:
+        """Extract frames and compute histogram differences between consecutive frames.
+        Returns list of {ptsTime, histDiff} for each pair within [ss, to]."""
+        import glob, numpy as np
+        from PIL import Image
+        from fractions import Fraction
+
+        with tempfile.TemporaryDirectory(prefix='ExtractFrameDiffs_') as tmpFolder:
+            args = [
+                self.ffmpeg, '-hide_banner',
+                '-ss', str(ss), '-to', str(to),
+                '-i', str(self.path),
+                '-filter:v', f'fps={fps}',
+                f'{tmpFolder}/out%08d.bmp',
+            ]
+            subprocess.run(args, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            bmp_files = sorted(glob.glob(f'{tmpFolder}/out*.bmp'))
+            if len(bmp_files) < 2:
+                return []
+
+            # Load all frames and compute histograms in one pass
+            fps_val = float(Fraction(fps))
+            diffs = []
+            prev_img = np.array(Image.open(bmp_files[0]).convert('L'))
+            for i in range(1, len(bmp_files)):
+                cur_img = np.array(Image.open(bmp_files[i]).convert('L'))
+                ha, _ = np.histogram(prev_img, bins=64, range=(0, 256))
+                hb, _ = np.histogram(cur_img, bins=64, range=(0, 256))
+                ha, hb = ha.astype(np.float64), hb.astype(np.float64)
+                ha /= ha.sum(); hb /= hb.sum()
+                diff = np.sum((ha - hb) ** 2 / (ha + hb + 1e-10))
+                pts_a = ss + (i - 1) / fps_val
+                diffs.append({'ptsTime': pts_a, 'histDiff': float(diff)})
+                prev_img = cur_img
+            return diffs
+
     def ExtractFrameProps(self, ss, to, nosad=False, progress=None):
         with tempfile.TemporaryDirectory(prefix='logoNet_frames_') as tmpLogoFolder:
             args = [
-                self.ffmpeg5, '-hide_banner',
+                self.ffmpeg, '-hide_banner',
                 '-ss', str(ss), '-to', str(to),
                 '-i', str(self.path),
                 '-filter:v', "select='gte(t,0)',showinfo", '-vsync', '0', '-frame_pts', '1',
@@ -136,20 +183,18 @@ class InputFile:
                     progress.add_task(tid, total, "Extracting frame props", unit="s")
                 last_pts = 0.0
                 for line in pipeObj.stderr:
-                    if 'pts_time:' in line:
+                    if 'pts_time:' in line and 'stdev:' in line:
                         ptsTime = float(line.split('pts_time:')[1].lstrip().split(' ')[0])
-                        pos = int(line.split('pos:')[1].lstrip().split(' ')[0])
                         checksum = line.split('checksum:')[1].split(' ')[0]
                         planeChecksum = line.split('plane_checksum:')[1].split('[')[1].split(']')[0].split(' ')
-                        meanStrList = line.split('mean:')[1].split('\x08')[0].split(']')[0].lstrip('[').split()
-                        stdevStrList = line.split('stdev:')[1].split('\x08')[0].split(']')[0].lstrip('[').split()
-                        mean = [ float(i) for i in meanStrList ]
-                        stdev = [ float(i) for i in stdevStrList ]
+                        meanRaw = line.split('mean:')[1].split(']')[0].lstrip('[')
+                        stdevRaw = line.split('stdev:')[1].split(']')[0].lstrip('[')
+                        mean = [float(i) for i in meanRaw.split() if _is_float(i)]
+                        stdev = [float(i) for i in stdevRaw.split() if _is_float(i)]
                         isKey = int(line.split(' iskey:')[1].split(' ')[0])
                         frameType = line.split(' type:')[1].split(' ')[0]
                         propList.append({
                             'ptsTime': ptsTime + ss,
-                            'pos': pos,
                             'checksum': checksum,
                             'plane_checksum': planeChecksum,
                             'mean': mean,
@@ -184,8 +229,5 @@ class InputFile:
             propList[i]['sad'] = sad
         for prop in propList[:]:
             if prop['ptsTime'] < ss or prop['ptsTime'] > to:
-                propList.remove(prop)
-        for prop in propList[:]:
-            if prop['pos'] < 0:
                 propList.remove(prop)
         return propList
