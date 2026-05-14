@@ -17,9 +17,6 @@ tscutter [--quiet] [--progress] [--version] COMMAND [ARGS]...
 # Generate a ptsmap
 tscutter index -i video.ts -o index.ptsmap -l 800 -t -80 -s 1
 
-# Split TS into clips by ptsmap
-tscutter split -i video.ts -x index.ptsmap -o clips/
-
 # Probe video info (JSON to stdout)
 tscutter probe -i video.ts
 
@@ -34,8 +31,8 @@ tscutter select-clips -x index.ptsmap --min-length 150
 
 - `tscutter.analyze` — CLI entry point and main orchestration: silence detection, scene‑change location, PTS map generation
 - `tscutter.audio` — silence detection using pydub/ffmpeg
-- `tscutter.ffmpeg` — `InputFile` class wraps ffmpeg/ffprobe subprocess calls; uses `ffmpeg-python` for probe. Key methods: `GetInfo`, `ExtractStream`, `ExtractFrameDiffs` (histogram-based scene change detection), `ExtractMeanImage`
-- `tscutter.common` — `PtsMap` class for reading `.ptsmap` files and splitting via `SplitVideo`; exception classes
+- `tscutter.ffmpeg` — `InputFile` class wraps ffmpeg/ffprobe subprocess calls; uses `ffmpeg-python` for probe. Key methods: `GetInfo`, `ExtractStream`, `ExtractFrameDiffs` (histogram-based scene change detection)
+- `tscutter.common` — `PtsMap` class for reading `.ptsmap` files; exception classes
 
 ## Key Design Decisions
 

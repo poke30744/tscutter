@@ -1,18 +1,8 @@
-import shutil, tempfile, argparse, logging
-import logging
+import shutil, tempfile, logging
 from pathlib import Path
 from .ffmpeg import InputFile
-from .common import FormatTimestamp
 
 logger = logging.getLogger('tscutter.audio')
-
-def FormatTimestamp(timestamp):
-    seconds = round(timestamp)
-    hour = seconds // 3600
-    seconds %= 3600
-    minutes = seconds // 60
-    seconds = timestamp % 60 
-    return f'{hour:02}:{minutes:02}:{seconds:05.02f}'
 
 def DetectSilence(inputFile: InputFile, ss=0, to=999999, min_silence_len=800, silence_thresh=-80, progress=None):
     from pydub import AudioSegment
@@ -30,16 +20,3 @@ def DetectSilence(inputFile: InputFile, ss=0, to=999999, min_silence_len=800, si
         logger.info('Silence detection done')
         return periods
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Detect silent periods in TS files')
-    parser.add_argument('--quiet', '-q', action='store_true', help="don't output to the console")
-    parser.add_argument('--input', '-i', required=True, help='input mpegts path')
-    parser.add_argument('--length', '-l', type=int, default=800, help='min silence length in ms')
-    parser.add_argument('--threshold', '-t', type=int, default=-80, help='silence threshold')
-    args = parser.parse_args()
-
-    logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-
-    silencePeriods = DetectSilence(inputFile=InputFile(args.input), min_silence_len=args.length, silence_thresh=args.threshold)
-    for period in silencePeriods:
-        print(FormatTimestamp(period[0] / 1000), period[1] - period[0])

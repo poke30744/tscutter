@@ -47,18 +47,6 @@ def FindSplitPosition(inputFile: InputFile, ss, to, splitPosShift=1, progress=No
     nextStart = {'ptsTime': best['ptsTime'] + frame_interval, 'sad': 0.0}
     return prevEnd, sceneChange, nextStart
 
-def LookingForCutLocations(inputFile: InputFile, intervals, splitPosShift, progress: Progress):
-    locations = []
-    tid = "cut_position"
-    progress.add_task(tid, len(intervals), "Finding cut positions")
-    for i, interval in enumerate(intervals):
-        prevEnd, sceneChange, nextStart = FindSplitPosition(inputFile, interval[0] / 1000, interval[1] / 1000, splitPosShift, progress=progress)
-        if prevEnd is not None and sceneChange is not None and nextStart is not None:
-            locations.append([prevEnd, sceneChange, nextStart])
-        progress.update(tid, i + 1)
-    progress.done(tid)
-    return locations
-
 def GeneratePtsMap(inputFile: InputFile, cutLocations):
     duration = inputFile.GetInfo().duration
     ptsmap = {
@@ -122,7 +110,15 @@ def AnalyzeVideo(inputFile: InputFile, indexPath=None, outputFolder=None, minSil
 
     separatorIntervals = DetectSilence(inputFile=inputFile, min_silence_len=minSilenceLen, silence_thresh=silenceThresh, progress=progress)
     mergedIntervals = MergeIntervals(separatorIntervals)
-    cutLocations = LookingForCutLocations(inputFile=inputFile, intervals=mergedIntervals, splitPosShift=splitPosShift, progress=progress)
+    cutLocations = []
+    tid = "cut_position"
+    progress.add_task(tid, len(mergedIntervals), "Finding cut positions")
+    for interval in mergedIntervals:
+        prevEnd, sceneChange, nextStart = FindSplitPosition(inputFile, interval[0] / 1000, interval[1] / 1000, splitPosShift, progress=progress)
+        if prevEnd is not None and sceneChange is not None and nextStart is not None:
+            cutLocations.append([prevEnd, sceneChange, nextStart])
+        progress.update(tid, len(cutLocations))
+    progress.done(tid)
     ptsMap = GeneratePtsMap(inputFile=inputFile, cutLocations=cutLocations)
 
     with indexPath.open('w') as f:
@@ -217,24 +213,6 @@ def select_clips(index, min_length):
         sys.exit(2)
     selectedClips, _ = ptsMap.SelectClips(lengthLimit=min_length)
     print(json.dumps(selectedClips))
-
-
-@cli.command()
-@click.option('--input', '-i', required=True, help='Input mpegts path')
-@click.option('--index', '-x', required=True, help='Input .ptsmap path')
-@click.option('--output', '-o', required=True, help='Output folder path')
-@click.pass_context
-def split(ctx, input, index, output):
-    """Split TS file into clips by .ptsmap cut points."""
-    try:
-        ptsMap = PtsMap(Path(index))
-    except FileNotFoundError:
-        print(f'FileNotFoundError: {index}', file=sys.stderr)
-        sys.exit(1)
-    except (json.JSONDecodeError, KeyError):
-        print(f'InvalidIndexFormat: {index}', file=sys.stderr)
-        sys.exit(2)
-    ptsMap.SplitVideo(Path(input), Path(output), progress=ctx.obj['progress'])
 
 
 def main():
