@@ -123,26 +123,35 @@ class InputFile:
 
     def ExtractFrameDiffs(self, ss, to, fps='2/1') -> list[dict]:
         """Extract frames and compute histogram differences between consecutive frames.
-        Returns list of {ptsTime, histDiff} for each pair within [ss, to]."""
-        import glob, numpy as np
+        Uses native source frames (no fps filter). Returns list of {ptsTime, histDiff}."""
+        import glob, numpy as np, re
         from PIL import Image
-        from fractions import Fraction
 
         with tempfile.TemporaryDirectory(prefix='ExtractFrameDiffs_') as tmpFolder:
             args = [
                 self.ffmpeg, '-hide_banner',
-                '-ss', str(ss), '-to', str(to),
+                '-copyts', '-ss', str(ss), '-to', str(to),
                 '-i', str(self.path),
-                '-filter:v', f'fps={fps}',
+                '-vf', 'showinfo',
+                '-vsync', '0',
                 f'{tmpFolder}/out%08d.bmp',
             ]
-            subprocess.run(args, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            result = subprocess.run(args, capture_output=True, text=True)
+            if result.returncode != 0:
+                return []
             bmp_files = sorted(glob.glob(f'{tmpFolder}/out*.bmp'))
             if len(bmp_files) < 2:
                 return []
 
-            # Load all frames and compute histograms in one pass
-            fps_val = float(Fraction(fps))
+            # Parse real PTS from showinfo stderr (absolute source PTS)
+            pts_list = []
+            for line in result.stderr.split('\n'):
+                m = re.search(r'pts_time:(\S+)', line)
+                if m:
+                    pts_list.append(float(m.group(1)))
+            if len(pts_list) != len(bmp_files):
+                return []
+
             diffs = []
             prev_img = np.array(Image.open(bmp_files[0]).convert('L'))
             for i in range(1, len(bmp_files)):
@@ -152,8 +161,7 @@ class InputFile:
                 ha, hb = ha.astype(np.float64), hb.astype(np.float64)
                 ha /= ha.sum(); hb /= hb.sum()
                 diff = np.sum((ha - hb) ** 2 / (ha + hb + 1e-10))
-                pts_a = ss + (i - 1) / fps_val
-                diffs.append({'ptsTime': pts_a, 'histDiff': float(diff)})
+                diffs.append({'ptsTime': pts_list[i - 1], 'histDiff': float(diff)})
                 prev_img = cur_img
             return diffs
 

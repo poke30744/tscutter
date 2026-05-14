@@ -1,4 +1,5 @@
 import json, sys
+from fractions import Fraction
 from pathlib import Path
 import logging
 import click
@@ -24,25 +25,26 @@ def MergeIntervals(intervals):
     return result
 
 def FindSplitPosition(inputFile: InputFile, ss, to, splitPosShift=1, progress=None):
-    diffs = inputFile.ExtractFrameDiffs(
-        ((ss - splitPosShift) if (ss - splitPosShift) > 0 else 0),
-        to + splitPosShift,
-        fps='2/1')
+    info = inputFile.GetInfo()
+    src_fps = Fraction(info.fps).limit_denominator(1001)
+    fps = f'{src_fps.numerator}/{src_fps.denominator}'
+    search_ss = (ss - splitPosShift) if (ss - splitPosShift) > 0 else 0
+    search_to = to + splitPosShift
+    diffs = inputFile.ExtractFrameDiffs(search_ss, search_to, fps=fps)
     if not diffs:
         return None, None, None
 
-    best_diff, best = -1, None
-    for d in diffs:
-        if ss <= d['ptsTime'] <= to and d['histDiff'] > best_diff:
-            best_diff = d['histDiff']
-            best = d
-
-    if best is None:
+    max_diff = max(d['histDiff'] for d in diffs)
+    strong = [d for d in diffs if d['histDiff'] > max_diff * 0.5]
+    if not strong:
         return None, None, None
+    best = strong[-1]
+
+    frame_interval = diffs[1]['ptsTime'] - diffs[0]['ptsTime'] if len(diffs) >= 2 else 0.5
 
     prevEnd = {'ptsTime': best['ptsTime'], 'sad': 0.0}
-    sceneChange = {'ptsTime': best['ptsTime'] + 0.5, 'sad': best_diff}
-    nextStart = {'ptsTime': best['ptsTime'] + 1.0, 'sad': 0.0}
+    sceneChange = {'ptsTime': best['ptsTime'], 'sad': best['histDiff']}
+    nextStart = {'ptsTime': best['ptsTime'] + frame_interval, 'sad': 0.0}
     return prevEnd, sceneChange, nextStart
 
 def LookingForCutLocations(inputFile: InputFile, intervals, splitPosShift, progress: Progress):
@@ -96,7 +98,7 @@ def GeneratePtsMap(inputFile: InputFile, cutLocations):
     ptsDedup = { round(pts): pts for pts in ptsmap }
     ptsmapDedup = { pts: ptsmap[pts] for pts in sorted(list(ptsDedup.values())) }
 
-    # to remove corrupted items (previous "next_start_pts" >= "next prev_end_pts")
+    # to remove corrupted items (previous "next_start_pts" > next "prev_end_pts")
     ptsKeys = list(ptsmapDedup.keys())
     ptsGoodKeys = [ ptsKeys[0] ]
     for nextKey in ptsKeys[1:]:
@@ -149,7 +151,7 @@ def cli(ctx, quiet, progress):
 @click.option('--threshold', '-t', type=int, default=-80, show_default=True, help='Silence threshold in dB')
 @click.option('--shift', '-s', type=float, default=1, show_default=True, help='Split position shift in seconds')
 @click.pass_context
-def analyze(ctx, input, output, length, threshold, shift):
+def index(ctx, input, output, length, threshold, shift):
     """Generate index file (.ptsmap) from mpegts file via silence detection + scene-change SAD."""
     AnalyzeVideo(
         inputFile=InputFile(input),

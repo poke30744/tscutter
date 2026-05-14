@@ -63,7 +63,8 @@ class PtsMap:
             outputPath = outputFolder / ClipToFilename(clip)
             subprocess.run([
                 'ffmpeg', '-hide_banner', '-y',
-                '-ss', str(ss), '-to', str(to), '-i', str(videoPath),
+                '-i', str(videoPath),
+                '-ss', str(ss), '-to', str(to),
                 '-c', 'copy', '-map', '0', '-ignore_unknown', '-copy_unknown',
                 str(outputPath)
             ], check=True, capture_output=True)

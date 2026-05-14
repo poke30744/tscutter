@@ -6,7 +6,7 @@ from tscutter.common import PtsMap, ClipToFilename, FormatTimestamp
 def test_PtsMap_Duration():
     ptsmap = {
         "0.0": {"prev_end_pts": 0.0, "next_start_pts": 0.0},
-        "100.5": {"prev_end_pts": 100.0, "next_start_pts": 101.0},
+        "100.0": {"prev_end_pts": 100.0, "next_start_pts": 100.5},
         "200.0": {"prev_end_pts": 200.0, "next_start_pts": 200.0},
     }
     with tempfile.NamedTemporaryFile(mode='w', suffix='.ptsmap', delete=False) as f:
@@ -17,8 +17,8 @@ def test_PtsMap_Duration():
         assert pm.Duration() == 200.0
         assert len(pm.Clips()) == 2
         clips = pm.Clips()
-        assert clips[0] == (0.0, 100.5)
-        assert clips[1] == (100.5, 200.0)
+        assert clips[0] == (0.0, 100.0)
+        assert clips[1] == (100.0, 200.0)
     finally:
         path.unlink()
 
@@ -26,8 +26,8 @@ def test_PtsMap_Duration():
 def test_SelectClips():
     ptsmap = {
         "0.0": {"prev_end_pts": 0.0, "next_start_pts": 0.0},
-        "100.0": {"prev_end_pts": 99.0, "next_start_pts": 101.0},
-        "300.0": {"prev_end_pts": 299.0, "next_start_pts": 301.0},
+        "100.0": {"prev_end_pts": 100.0, "next_start_pts": 100.5},
+        "300.0": {"prev_end_pts": 300.0, "next_start_pts": 300.5},
         "500.0": {"prev_end_pts": 500.0, "next_start_pts": 500.0},
     }
     with tempfile.NamedTemporaryFile(mode='w', suffix='.ptsmap', delete=False) as f:
