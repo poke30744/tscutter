@@ -8,6 +8,18 @@ import numpy as np
 from PIL import Image
 import ffmpeg
 from .common import TsFileNotFound, InvalidTsFormat
+from .service import ResolveServicePids, ServicePids
+
+def ParseFrameRate(value) -> float:
+    """Frame rate as a float.  ffprobe writes "0/0" for a stream it could not
+    measure — the SD stream of a BS multi-channel recording often gets that
+    treatment — so this returns 0.0 rather than raising."""
+    try:
+        numerator, denominator = str(value).split('/')
+        return float(numerator) / float(denominator) if float(denominator) else 0.0
+    except (AttributeError, ValueError):
+        return 0.0
+
 
 @dataclass
 class VideoInfo:
@@ -21,7 +33,7 @@ class VideoInfo:
     serviceId: int
 
 class InputFile:
-    def __init__(self, path) -> None:
+    def __init__(self, path, serviceId: int | None = None) -> None:
         self.ffmpeg = shutil.which('ffmpeg')
         self.ffprobe = shutil.which('ffprobe')
         self.ffmpeg5 = shutil.which('ffmpeg5')
@@ -30,24 +42,112 @@ class InputFile:
         if self.ffprobe is None:
             raise RuntimeError("ffprobe not found in PATH — install ffmpeg or add it to PATH")
         self.path = Path(path)
+        self.serviceId = serviceId
         if not self.path.is_file():
             raise TsFileNotFound(f'"{self.path.name}" not found!')
-    
+
+    @cache
+    def ServicePids(self) -> ServicePids | None:
+        """Elementary-stream PIDs of the pinned service, or None when unpinned."""
+        if self.serviceId is None:
+            return None
+        return ResolveServicePids(self.path, self.serviceId, ffprobe=self.ffprobe)
+
+    @cache
+    def AudioStartOffset(self, audioTrack: int = 0) -> float:
+        """Seconds between the container's start and where this track's WAV starts.
+
+        A WAV decoded by ffmpeg starts at its first sample, so anything timed in
+        it is this much earlier than the container's own timeline.  Where that
+        first sample lands cannot be read off the stream's start_time: on a
+        recording whose head still carries the pre-switch PMT the demuxer cannot
+        parse the track and reports the container's start_time for it, and
+        whether aresample=async=1 then fills the lead-in with silence — moving
+        the WAV back to the container's start — is not decided by that alone.
+        Ask the resampler instead: decode a little of the head through the same
+        filter chain ExtractStream uses and read the timestamp of the first
+        frame it emits.  That timestamp is relative to the mapped stream's own
+        start, so adding the stream's offset from the container puts it on the
+        container's timeline.
+        """
+        def probe(args: list[str]) -> str:
+            result = subprocess.run([self.ffprobe, '-v', 'error', *args, str(self.path)],
+                                    capture_output=True, text=True, errors='replace')
+            # A PID that several programs carry is listed once per program, so
+            # read the first non-empty row.
+            lines = [line for line in result.stdout.splitlines() if line.strip()]
+            return lines[0].split(',')[0] if lines else ''
+
+        # Probe the stream ExtractStream would map, not the container's first audio
+        # track: with a service pinned those are different streams.
+        spec = self.MapSpec('a', audioTrack)
+        streamStart = probe(['-select_streams', spec.removeprefix('0:'),
+                             '-show_entries', 'stream=start_time', '-of', 'csv=p=0'])
+        containerStart = probe(['-show_entries', 'format=start_time', '-of', 'csv=p=0'])
+        if not streamStart or not containerStart or 'N/A' in (streamStart, containerStart):
+            return 0.0
+
+        result = subprocess.run(
+            [self.ffmpeg, '-hide_banner', '-nostdin', '-ss', '0', '-i', str(self.path),
+             '-map', spec, '-af', 'aresample=async=1,ashowinfo', '-t', '15',
+             '-f', 'null', '-'],
+            capture_output=True, text=True, errors='replace')
+        firstFrame = next((line.split('pts_time:')[1].split()[0]
+                           for line in result.stderr.splitlines()
+                           if 'Parsed_ashowinfo' in line and 'pts_time:' in line), None)
+        if firstFrame is None:
+            return 0.0
+        return float(streamStart) - float(containerStart) + float(firstFrame)
+
+    def MapSpec(self, kind: str, index: int) -> str:
+        """ffmpeg stream specifier, by PID when a service is pinned, else by index."""
+        pids = self.ServicePids()
+        if pids is not None and index == 0:
+            spec = pids.MapSpec(kind)
+            if spec is not None:
+                return spec
+        return f'0:{kind}:{index}'
+
+    def ServiceMapArgs(self, kind: str, index: int) -> list[str]:
+        """`-map` arguments pinning a stream by PID, or nothing when unpinned.
+
+        Callers that pass no `-map` at all today keep ffmpeg's own stream choice,
+        so they must stay untouched unless a service is actually pinned.
+        """
+        if self.ServicePids() is None:
+            return []
+        return ['-map', self.MapSpec(kind, index)]
+
+    def SelectStreams(self, streams: list[dict], codecType: str) -> list[dict]:
+        """Streams of the given codec type, restricted to the pinned service."""
+        selected = [s for s in streams if s.get('codec_type') == codecType]
+        pids = self.ServicePids()
+        if pids is not None:
+            selected = [s for s in selected if int(s.get('id', '0x0'), 16) in pids.allPids]
+        return selected
+
     @cache
     def GetInfo(self) -> VideoInfo:
         try:
-            probeInfo = ffmpeg.probe(str(self.path), cmd=self.ffprobe, show_programs=None)
+            # The default probe window (5 MB / 5 s) is too small for a recording
+            # that carries two services: ffprobe lists the pinned service's video
+            # stream but never parses it, so its width/height come back 0 and its
+            # frame rate "0/0".  32 MB was enough for every such file measured.
+            probeInfo = ffmpeg.probe(str(self.path), cmd=self.ffprobe, show_programs=None,
+                                     probesize='32M', analyzeduration='10M')
         except (ffmpeg.Error, json.JSONDecodeError, KeyError):
             raise InvalidTsFormat(f'"{self.path.name}" is invalid!')
 
-        video_stream = next(s for s in probeInfo['streams'] if s.get('codec_type') == 'video')
-        audio_streams = [s for s in probeInfo['streams'] if s.get('codec_type') == 'audio']
+        video_stream = self.SelectStreams(probeInfo['streams'], 'video')[0]
+        audio_streams = self.SelectStreams(probeInfo['streams'], 'audio')
 
         videoInfo = VideoInfo(
-            duration = float(video_stream['duration']),
+            # A stream can come back without a duration of its own; the container's
+            # duration is the same figure for a single-service recording.
+            duration = float(video_stream.get('duration') or probeInfo['format']['duration']),
             width = video_stream['width'],
             height = video_stream['height'],
-            fps = eval(video_stream['avg_frame_rate']),
+            fps = ParseFrameRate(video_stream.get('avg_frame_rate')) or ParseFrameRate(video_stream.get('r_frame_rate')),
             sar = video_stream['sample_aspect_ratio'].split(':'),
             dar = video_stream['display_aspect_ratio'].split(':'),
             soundTracks = len(audio_streams),
@@ -70,7 +170,7 @@ class InputFile:
         if videoTracks is None:
             videoTracks = [ 0 ]
         for i in videoTracks:
-            args += [  '-map', f'0:v:{i}', '-c:v', 'copy', output / f'video_{i}.ts' ]
+            args += [  '-map', self.MapSpec('v', i), '-c:v', 'copy', output / f'video_{i}.ts' ]
 
         # copy audio tracks or decode to WAV
         info = self.GetInfo()
@@ -78,7 +178,7 @@ class InputFile:
         if audioTracks is None:
             audioTracks =  list(range(info.soundTracks))
         for i in audioTracks:
-            args += [ '-map', f'0:a:{i}' ]
+            args += [ '-map', self.MapSpec('a', i) ]
             if toWav:
                 # to sync corrputed sound tracks with the actual video length
                 args += [ '-af',  'aresample=async=1', '-f', 'wav' ]
@@ -116,6 +216,7 @@ class InputFile:
                 self.ffmpeg5, '-hide_banner',
                 '-ss', str(ss), '-to', str(to),
                 '-i', str(self.path),
+                *self.ServiceMapArgs('v', 0),
                 '-filter:v', "select='gte(t,0)',showinfo", '-vsync', '0', '-frame_pts', '1',
             ]
             if nosad:

@@ -27,6 +27,13 @@ def DetectSilence(inputFile: InputFile, ss=0, to=999999, min_silence_len=800, si
         sound = AudioSegment.from_file(audioFilename, channels=1)
         logger.info(f'Detect silence (min_silence_len: {min_silence_len},  silence_thresh: {silence_thresh})')
         periods = detect_silence(audio_segment=sound, min_silence_len=min_silence_len, silence_thresh=silence_thresh, seek_step=10)
+        # The WAV starts at this track's first sample, which for a TS that carries
+        # several services is later than the container's start.  Move the periods
+        # onto the container's timeline, where everything downstream reads them.
+        offset = round(inputFile.AudioStartOffset(0) * 1000)
+        if offset > 0:
+            logger.info(f'Audio track starts {offset} ms into the file, shifting silence periods')
+            periods = [ (start + offset, end + offset) for start, end in periods ]
         logger.info('Silence detection done')
         return periods
 

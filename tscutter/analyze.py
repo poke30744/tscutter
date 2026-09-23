@@ -2,10 +2,12 @@ import json, sys
 from pathlib import Path
 import logging
 import click
+from rich.console import Console
 from rich.logging import RichHandler
 from ._progress import Progress
 from .audio import DetectSilence
 from .common import FormatTimestamp, PtsMap, TsFileNotFound, InvalidTsFormat
+from .service import ServiceNotFound
 from . import __version__
 from .ffmpeg import InputFile
 
@@ -150,9 +152,11 @@ def AnalyzeVideo(inputFile: InputFile, indexPath=None, outputFolder=None, minSil
 def cli(ctx, quiet, progress):
     """Cut TS files: split by silence and fine-tune by scene-change PTS analysis."""
     log_level = logging.WARNING if quiet else logging.INFO
+    # Log to stderr: probe/list-clips/select-clips write JSON on stdout, and the
+    # parent (tstriage) parses that stdout as JSON.
     logging.basicConfig(
         level=log_level, format='%(message)s', datefmt='[%X]',
-        handlers=[RichHandler(rich_tracebacks=True)])
+        handlers=[RichHandler(console=Console(stderr=True), rich_tracebacks=True)])
     ctx.ensure_object(dict)
     ctx.obj['progress'] = Progress(use_protocol=progress)
 
@@ -163,11 +167,12 @@ def cli(ctx, quiet, progress):
 @click.option('--length', '-l', type=int, default=800, show_default=True, help='Minimal silence length in ms')
 @click.option('--threshold', '-t', type=int, default=-80, show_default=True, help='Silence threshold in dB')
 @click.option('--shift', '-s', type=float, default=1, show_default=True, help='Split position shift in seconds')
+@click.option('--service-id', type=int, help='Pin analysis to this service (program_number)')
 @click.pass_context
-def analyze(ctx, input, output, length, threshold, shift):
+def analyze(ctx, input, output, length, threshold, shift, service_id):
     """Generate index file (.ptsmap) from mpegts file via silence detection + scene-change SAD."""
     AnalyzeVideo(
-        inputFile=InputFile(input),
+        inputFile=InputFile(input, serviceId=service_id),
         indexPath=Path(output) if output else None,
         minSilenceLen=length,
         silenceThresh=threshold,
@@ -178,17 +183,23 @@ def analyze(ctx, input, output, length, threshold, shift):
 
 @cli.command()
 @click.option('--input', '-i', required=True, help='Input mpegts path')
-def probe(input):
+@click.option('--service-id', type=int, help='Pin analysis to this service (program_number)')
+def probe(input, service_id):
     """Probe TS file and output VideoInfo JSON to stdout."""
     try:
-        info = InputFile(input).GetInfo()
+        inputFile = InputFile(input, serviceId=service_id)
+        info = inputFile.GetInfo()
+        servicePids = inputFile.ServicePids()
     except TsFileNotFound:
         print(f'TsFileNotFound: "{input}" not found!', file=sys.stderr)
         sys.exit(1)
     except InvalidTsFormat:
         print(f'InvalidTsFormat: "{input}" is invalid!', file=sys.stderr)
         sys.exit(2)
-    print(json.dumps({
+    except ServiceNotFound as e:
+        print(f'ServiceNotFound: {e}', file=sys.stderr)
+        sys.exit(3)
+    data = {
         'duration': info.duration,
         'width': info.width,
         'height': info.height,
@@ -197,7 +208,15 @@ def probe(input):
         'dar': list(info.dar),
         'soundTracks': info.soundTracks,
         'serviceId': info.serviceId,
-    }))
+    }
+    if servicePids is not None:
+        data['streamPids'] = {
+            'video': servicePids.video,
+            'audio': servicePids.audio,
+            'subtitle': servicePids.subtitle,
+            'all': list(servicePids.allPids),
+        }
+    print(json.dumps(data))
 
 
 @cli.command()
