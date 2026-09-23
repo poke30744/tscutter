@@ -8,6 +8,7 @@ import numpy as np
 from PIL import Image
 import ffmpeg
 from .common import TsFileNotFound, InvalidTsFormat
+from .service import ResolveServicePids, ServicePids
 
 @dataclass
 class VideoInfo:
@@ -21,7 +22,7 @@ class VideoInfo:
     serviceId: int
 
 class InputFile:
-    def __init__(self, path) -> None:
+    def __init__(self, path, serviceId: int | None = None) -> None:
         self.ffmpeg = shutil.which('ffmpeg')
         self.ffprobe = shutil.which('ffprobe')
         if self.ffmpeg is None:
@@ -29,9 +30,44 @@ class InputFile:
         if self.ffprobe is None:
             raise RuntimeError("ffprobe not found in PATH — install ffmpeg or add it to PATH")
         self.path = Path(path)
+        self.serviceId = serviceId
         if not self.path.is_file():
             raise TsFileNotFound(f'"{self.path.name}" not found!')
-    
+
+    @cache
+    def ServicePids(self) -> ServicePids | None:
+        """Elementary-stream PIDs of the pinned service, or None when unpinned."""
+        if self.serviceId is None:
+            return None
+        return ResolveServicePids(self.path, self.serviceId, ffprobe=self.ffprobe)
+
+    def MapSpec(self, kind: str, index: int) -> str:
+        """ffmpeg stream specifier, by PID when a service is pinned, else by index."""
+        pids = self.ServicePids()
+        if pids is not None and index == 0:
+            spec = pids.MapSpec(kind)
+            if spec is not None:
+                return spec
+        return f'0:{kind}:{index}'
+
+    def ServiceMapArgs(self, kind: str, index: int) -> list[str]:
+        """`-map` arguments pinning a stream by PID, or nothing when unpinned.
+
+        Callers that pass no `-map` at all today keep ffmpeg's own stream choice,
+        so they must stay untouched unless a service is actually pinned.
+        """
+        if self.ServicePids() is None:
+            return []
+        return ['-map', self.MapSpec(kind, index)]
+
+    def SelectStreams(self, streams: list[dict], codecType: str) -> list[dict]:
+        """Streams of the given codec type, restricted to the pinned service."""
+        selected = [s for s in streams if s.get('codec_type') == codecType]
+        pids = self.ServicePids()
+        if pids is not None:
+            selected = [s for s in selected if int(s.get('id', '0x0'), 16) in pids.allPids]
+        return selected
+
     @cache
     def GetInfo(self) -> VideoInfo:
         try:
@@ -39,8 +75,8 @@ class InputFile:
         except (ffmpeg.Error, json.JSONDecodeError, KeyError):
             raise InvalidTsFormat(f'"{self.path.name}" is invalid!')
 
-        video_stream = next(s for s in probeInfo['streams'] if s.get('codec_type') == 'video')
-        audio_streams = [s for s in probeInfo['streams'] if s.get('codec_type') == 'audio']
+        video_stream = self.SelectStreams(probeInfo['streams'], 'video')[0]
+        audio_streams = self.SelectStreams(probeInfo['streams'], 'audio')
 
         # Duration: stream level (TS) or format level (MKV)
         duration = float(video_stream.get('duration') or probeInfo['format']['duration'])
@@ -75,7 +111,7 @@ class InputFile:
         if videoTracks is None:
             videoTracks = [ 0 ]
         for i in videoTracks:
-            args += [  '-map', f'0:v:{i}', '-c:v', 'copy', output / f'video_{i}.ts' ]
+            args += [  '-map', self.MapSpec('v', i), '-c:v', 'copy', output / f'video_{i}.ts' ]
 
         # copy audio tracks or decode to WAV
         info = self.GetInfo()
@@ -83,7 +119,7 @@ class InputFile:
         if audioTracks is None:
             audioTracks =  list(range(info.soundTracks))
         for i in audioTracks:
-            args += [ '-map', f'0:a:{i}' ]
+            args += [ '-map', self.MapSpec('a', i) ]
             if toWav:
                 args += [ '-f', 'wav' ]
             else:
@@ -125,6 +161,7 @@ class InputFile:
                 self.ffmpeg, '-hide_banner',
                 '-copyts', '-ss', str(ss), '-to', str(to),
                 '-i', str(self.path),
+                *self.ServiceMapArgs('v', 0),
                 '-vf', 'showinfo',
                 '-vsync', '0',
                 f'{tmpFolder}/out%08d.bmp',
