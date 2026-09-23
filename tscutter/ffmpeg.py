@@ -166,7 +166,10 @@ class InputFile:
                 '-vsync', '0',
                 f'{tmpFolder}/out%08d.bmp',
             ]
-            result = subprocess.run(args, capture_output=True, text=True)
+            # ffmpeg echoes the input path using the platform's own encoding, which is
+            # not UTF-8 for Japanese paths on Windows.  Without errors= the reader
+            # thread dies and stderr comes back as None.
+            result = subprocess.run(args, capture_output=True, text=True, errors='replace')
             if result.returncode != 0:
                 return []
             bmp_files = sorted(glob.glob(f'{tmpFolder}/out*.bmp'))
